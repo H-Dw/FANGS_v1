@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-cdr_circle_heatmaps_with_size_merged_prefix.py
+Circle heatmaps of paired CDR-fragment insertions.
 
-改动说明:
- - 修复了图注显示不全/消失的 BUG：移除 tight_layout，使用 subplots_adjust 预留右侧空间。
- - 优化了代码结构：消除了绘图函数对全局变量 args 的依赖。
- - color 分组按升序（值越小越靠前）：Bottom 5%, 10%, 20%, 30%, 50%, rest
- - size: 值越小 marker 越大（inverted mapping）
- - color legend 放右上，size legend 放右下
+Revision notes:
+- Legends were previously truncated or omitted. tight_layout is therefore
+  omitted, and subplots_adjust reserves the right-hand margin.
+- Plotting functions no longer depend on the global argument namespace.
+- Color bins are ordered by ascending metric value, so smaller values
+  occupy the leading groups: bottom 5%, 10%, 20%, 30%, 50%, and the remainder.
+- Marker area uses an inverted mapping: smaller size-metric values are
+  drawn as larger markers.
+- The color legend is placed at the upper right and the size legend at the
+  lower right.
 """
 import argparse
 import os
@@ -293,9 +297,9 @@ def plot_circle_heatmap(arr_color, arr_size, x_labels, y_labels, x_title, y_titl
                     edgecolors='black', linewidths=0.35)
 
     # ----- Define Alignment Constants -----
-    # 定义统一的左对齐 X 坐标 (Figure 坐标系，0-1)
+    # Shared left edge of both legends in figure coordinates (range 0-1).
     LEGEND_X = 0.82 
-    # 定义图注垂直位置
+    # Vertical positions of the color and size legends in figure coordinates.
     COLOR_LEGEND_Y = 0.85
     SIZE_LEGEND_Y = 0.50
 
@@ -312,12 +316,12 @@ def plot_circle_heatmap(arr_color, arr_size, x_labels, y_labels, x_title, y_titl
         Patch(facecolor=col, edgecolor='black') for col in group_colors
     ]
 
-    # 修改点 1: loc改为 'upper left'，bbox_to_anchor 使用固定 LEGEND_X
+    # Anchor the legend at its upper-left corner and place that corner at LEGEND_X.
     color_legend = fig.legend(
         legend_patches, 
         label_map, 
         title=color_label.capitalize(),
-        loc="upper left",                 # 以左上角为锚点
+        loc="upper left",                 # Anchor at the upper-left corner.
         bbox_to_anchor=(LEGEND_X, COLOR_LEGEND_Y), # (x, y)
         title_fontsize=14,
         fontsize=12,

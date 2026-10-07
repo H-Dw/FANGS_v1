@@ -6,15 +6,15 @@ from sklearn.metrics.pairwise import cosine_similarity
 import os
 
 def split_connector(target_df):
-    first_column = target_df.iloc[:, 0]  # 首列-id
-    data_to_scale = target_df.iloc[:, 1:]  # 其余列-embedding
+    first_column = target_df.iloc[:, 0]  # First column: structure identifier.
+    data_to_scale = target_df.iloc[:, 1:]  # Remaining columns: embedding features.
     
     # scaler = StandardScaler()
     # scaled_data = scaler.fit_transform(data_to_scale)
     # scaled_df = pd.DataFrame(scaled_data, columns=data_to_scale.columns)
     # full_scaled_df = pd.concat([first_column.reset_index(drop=True), scaled_df], axis=1)
 
-    # 分割 connectors
+    # Partition the feature columns into the three CDR-flanking connectors.
     num_columns = len(target_df.columns)
     connector_len = (num_columns - 1) // 3
 
@@ -28,7 +28,7 @@ def split_connector(target_df):
         [first_column.reset_index(drop=True), target_df.iloc[:, -connector_len:]], axis=1
     )
 
-    # 按重要性计算加权距离
+    # Connectors retained for subsequent importance-weighted distance calculation.
     connectors = {
         'connector1': connector1,
         'connector2': connector2,
@@ -39,74 +39,96 @@ def split_connector(target_df):
 
 def calculate_euclidean_distances(query, df):
     """
-    计算每个数据点与给定查询点的欧几里得距离。
+    Compute the Euclidean distance from a query to every target.
 
-    参数:
-    - query: 查询点的 pdb_id。
-    - df: 数据框，第1列为 pdb_id，其余列为数据特征。
+    Parameters
+    ----------
+    query : pandas.DataFrame
+        Query table. The first column stores the PDB identifier and the
+        remaining columns store the feature values. Exactly one row is expected.
+    df : pandas.DataFrame
+        Target table with the same column layout as ``query``.
 
-    返回:
-    - distances: 包含每个数据点与查询点的欧几里得距离的列表。
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional array of Euclidean distances from the query to each target.
     """
-    # 提取查询点的 embedding
+    # Extract the query embedding.
     query_data = query.iloc[:, 1:].to_numpy()
     if query_data.shape[0] != 1:
         raise ValueError(f"Input query was None or had multiple rows\n{query}")
     
-    # 提取其余点的 embedding
+    # Extract the target embeddings.
     data = df.iloc[:, 1:].to_numpy()
 
-    # 计算距离
+    # Evaluate pairwise Euclidean distances.
     distances = euclidean_distances(data, query_data)
 
-    # 返回为一维数组
+    # Return a one-dimensional array.
     return distances.flatten()
 
 
 def calculate_cosine_similarities(query, df):
     """
-    计算每个数据点与给定查询点的余弦相似性。
+    Compute the cosine similarity between a query and every target.
 
-    参数:
-    - query: 查询点的 pdb_id。
-    - df: 数据框，第1列为 pdb_id，其余列为数据特征。
+    Parameters
+    ----------
+    query : pandas.DataFrame
+        Query table. The first column stores the PDB identifier and the
+        remaining columns store the feature values. Exactly one row is expected.
+    df : pandas.DataFrame
+        Target table with the same column layout as ``query``.
 
-    返回:
-    - similarities: 包含每个数据点与查询点的余弦相似性的 NumPy 一维数组。
-      值域在 [-1, 1]，越接近 1 表示越相似。
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional array of cosine similarities. Values lie in [-1, 1];
+        values closer to 1 indicate greater similarity.
     """
-    # 提取查询点的 embedding
+    # Extract the query embedding.
     query_data = query.iloc[:, 1:].to_numpy()
     if query_data.shape[0] != 1:
         raise ValueError(f"Input query was None or had multiple rows\n{query}")
 
-    # 提取所有点的 embedding
+    # Extract all target embeddings.
     data = df.iloc[:, 1:].to_numpy()
 
-    # 计算余弦相似性矩阵：结果形状为 (n_samples, 1)
-    # sklearn.metrics.pairwise.cosine_similarity 在内部自动把分子（点积）除以两个向量的 L2 范数的乘积，从而“在计算相似度时”隐式地做了归一化。
+    # Cosine-similarity matrix of shape (n_samples, 1).
+    # sklearn.metrics.pairwise.cosine_similarity divides each dot product by the
+    # product of the two L2 norms, so the vectors are normalized implicitly.
     similarities = cosine_similarity(data, query_data)
 
     return similarities.flatten()
 
 def calculate_weighted_distances(query_connectors, target_connectors, weights):
     """
-    计算加权欧几里得距离和加权余弦相似性，并返回按欧几里得距离升序排列的 DataFrame。
+    Compute weighted Euclidean distances and weighted cosine similarities.
 
-    参数:
-    - query_connectors: dict, {'connector1': DataFrame, 'connector2': ..., 'connector3': ...}
-      每个 DataFrame 都只包含一行（query）。
-    - target_connectors: dict, 同上，但每个 DataFrame 有 N 行（targets）。
-    - weights: list of float, 长度为 3，对应三个 connector 的权重。
+    The returned table is sorted by Euclidean distance in ascending order.
 
-    返回:
-    - output_df: pandas.DataFrame, 包含 ['pdb_id', 'euclidean', 'cosine']，按 euclidean 升序。
+    Parameters
+    ----------
+    query_connectors : dict
+        Mapping ``{'connector1': DataFrame, 'connector2': ..., 'connector3': ...}``.
+        Each DataFrame contains a single query row.
+    target_connectors : dict
+        Same layout as ``query_connectors``, with one row per target.
+    weights : sequence of float
+        Three weights, one for each connector.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``['pdb_id', 'euclidean', 'cosine']``, sorted by ``euclidean``
+        in ascending order.
     """
     keys = ['connector1', 'connector2', 'connector3']
     euclid_dists = {}
     cosine_sims  = {}
 
-    # 1) 对每个 connector 计算距离/相似性
+    # 1) Compute distances and similarities for each connector.
     for key in keys:
         q_df = query_connectors[key]
         t_df = target_connectors[key]
@@ -114,18 +136,18 @@ def calculate_weighted_distances(query_connectors, target_connectors, weights):
         euclid_dists[key] = calculate_euclidean_distances(q_df, t_df)
         cosine_sims[key]  = calculate_cosine_similarities(q_df, t_df)
 
-    # 2) 用第一个 connector 的长度来初始化累加向量
+    # 2) Initialize the accumulators from the number of targets in the first connector.
     n_samples = euclid_dists[keys[0]].shape[0]
     weighted_euclid = np.zeros(n_samples, dtype=float)
     weighted_cosine = np.zeros(n_samples, dtype=float)
 
-    # 3) 加权累加
+    # 3) Accumulate the weighted distances and similarities.
     for i, key in enumerate(keys):
         w = weights[i]
         weighted_euclid += euclid_dists[key] * w
         weighted_cosine += cosine_sims[key]  * w
 
-    # 4) 拼回 pdb_id 并排序
+    # 4) Reattach the PDB identifiers and sort by Euclidean distance.
     pdb_ids = target_connectors[keys[0]].iloc[:, 0].tolist()
     output_df = pd.DataFrame({
         'pdb_id':   pdb_ids,
@@ -143,14 +165,14 @@ def main(query_table_path, target_table_path, output_similarity_tsv):
     target_df = pd.read_csv(target_table_path, sep='\t')
     target_df.rename(columns={target_df.columns[0]: 'pdb_id'}, inplace=True)
 
-    # 查找存在空缺值的行
+    # Identify rows that contain missing values.
     rows_with_nan = target_df[target_df.isnull().any(axis=1)]
     if not rows_with_nan.empty:
-        # 提取出有 NaN 的 pdb_id 列表
+        # Collect the PDB identifiers of rows that contain NaN.
         nan_pdb_ids = rows_with_nan['pdb_id'].tolist()
-        # 打印这些 pdb_id
+        # Report the identifiers that will be removed.
         print("Removed rows with NaN for pdb_id:", nan_pdb_ids)
-        # 真正删除这些行
+        # Remove those rows from the target table.
         target_df = target_df.drop(rows_with_nan.index).reset_index(drop=True)
 
     query_connectors = split_connector(query_df)
@@ -161,9 +183,9 @@ def main(query_table_path, target_table_path, output_similarity_tsv):
     # output_df.to_csv(output_similarity_tsv, sep='\t', index=False)
 
     # All data
-    # 计算欧几里得距离
+    # Compute Euclidean distances over the full feature vectors.
     euclid_dists_all = calculate_euclidean_distances(query_df, target_df)
-    # 计算余弦相似性
+    # Compute cosine similarities over the full feature vectors.
     cosine_sims_all = calculate_cosine_similarities(query_df, target_df)
 
     pdb_ids = target_df.iloc[:, 0].to_list()
@@ -172,7 +194,7 @@ def main(query_table_path, target_table_path, output_similarity_tsv):
         'euclidean': euclid_dists_all,
         'cosine': cosine_sims_all
     })
-    # 按加权欧几里得距离升序排列
+    # Sort by Euclidean distance in ascending order.
     all_output_df = all_output_df.sort_values(by='euclidean', ascending=True).reset_index(drop=True)
     all_output_df.to_csv(f'{os.path.splitext(output_similarity_tsv)[0]}_all.tsv' , sep='\t', index=False)
 

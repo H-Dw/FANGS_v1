@@ -25,7 +25,7 @@ def set_cpu(cpu_num):
     torch.set_num_threads(cpu_num)
 
 def input_selection(similarity_path, FR_pdb_folder, cdr_db_file, select_mode, select_distance, top_n, generation_path, generation_input_file):
-    # 转换为template_based_generation的输入格式
+    # Convert the selected carriers into the input table required by template-based generation.
     # top_n = top_n + 1  # Contain template itself, but will be removed in generation
     all_transformat_df = None
 
@@ -88,7 +88,7 @@ def sele_generation(passed_generation_folder, select_n):
     else:
         print(f'Obtained {dulp_passed_generation_df.shape[0]} acceptable generations')
     select_n = select_n if dulp_passed_generation_df.shape[0] > select_n else dulp_passed_generation_df.shape[0]
-    selected_data = dulp_passed_generation_df.iloc[:int(select_n)]  # 行索引0到4（前5行）
+    selected_data = dulp_passed_generation_df.iloc[:int(select_n)]  # Retain the first select_n rows.
 
     return selected_data
 

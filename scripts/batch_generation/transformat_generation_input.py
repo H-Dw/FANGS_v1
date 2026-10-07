@@ -2,24 +2,24 @@ import pandas as pd
 import os
 
 def transformat(pdb_cdr_df, pdb_path, output_file):
-    # 生成 pdb_path + 文件名
+    # Resolve the structure directory and append each filename.
     pdb_path = os.path.abspath(pdb_path)
     # pdb_cdr_df['pdb_path'] = pdb_cdr_df['pdb_id'].apply(lambda x: f"{pdb_path}/{x}.pdb")
     pdb_cdr_df['pdb_path'] = pdb_cdr_df['target'].apply(
         lambda x: f"{pdb_path}/{x}" if x.endswith('.pdb') else f"{pdb_path}/{x}.pdb"
     )
     
-    # 从 target 列提取 chain (假设为第 4 个字符)
+    # Extract the chain identifier from the target name, beginning at the fifth character.
     # pdb_cdr_df['chain'] = pdb_cdr_df['pdb_id'].str[4:]
     pdb_cdr_df['chain'] = pdb_cdr_df['target'].str[4:]
     # NOTE: generated false formate
     
-    # 计算 CDR3 序列的长度
+    # Compute the length of each CDR3 sequence.
     pdb_cdr_df['cdr3_length'] = pdb_cdr_df['cdr3_seq'].apply(len)
     
-    # 构建所需的列并保存为 TSV 文件
+    # Assemble the required columns and write them as a TSV file.
     output_df = pdb_cdr_df[['pdb_path', 'chain', 'cdr1_seq', 'cdr2_seq', 'cdr3_seq', 'cdr3_length']]
-    output_df.columns = ['pdb_path', 'chain', 'cdr1', 'cdr2', 'cdr3', 'cdr3_length']  # 重命名列
+    output_df.columns = ['pdb_path', 'chain', 'cdr1', 'cdr2', 'cdr3', 'cdr3_length']  # Rename columns to the generation-input schema.
     output_df.to_csv(output_file, sep='\t', index=False)
     return output_df
 

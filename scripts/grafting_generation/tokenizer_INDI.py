@@ -18,10 +18,10 @@ def find_cdr_start(pep_chain, cdr):
     sequence = pep_chain.sequence
     cdr_start = cdr_end = -1
     try:
-        # 返回实际位置
+        # Locate the CDR as a contiguous substring of the chain sequence.
         cdr_start = sequence.find(cdr)
         cdr_end = cdr_start + len(cdr)
-        # 检查cdr是否在full_seq中
+        # Confirm that the CDR occurs within the full chain sequence.
         if cdr is None or cdr_start == -1:
             print(f"WARNNING: CDR sequence '{cdr}' not found in the {pep_chain.id}.")
         else:
@@ -29,11 +29,11 @@ def find_cdr_start(pep_chain, cdr):
     except Exception as error:
         print(f"{pep_chain.id}: {str(error)}\n")
 
-    return cdr_start, cdr_end  # 返回-1以防止后续错误
+    return cdr_start, cdr_end  # Return -1 when the CDR is absent so that subsequent indexing can be rejected.
 
 def transformation(embeddings):
     assert embeddings.size(0) == 1, f"Batch size must be 1 to squeeze, but got {embeddings.size(0)}"
-    matrix: torch.Tensor = embeddings.squeeze(0)  # 得到 (L, C)
+    matrix: torch.Tensor = embeddings.squeeze(0)  # Reduce the batch axis to a residue-by-channel matrix of shape (L, C).
     return matrix
 
 def tokenization(model, pep_chain):
@@ -53,14 +53,17 @@ def tokenization(model, pep_chain):
 
 def calc_distance(coords: np.ndarray) -> np.ndarray:
     """
-    向量化版本：计算 coords 中每两个三维坐标点之间的欧氏距离。
+    Compute all pairwise Euclidean distances among three-dimensional coordinates.
+
+    The implementation is fully vectorized. Self-distances are excluded by
+    retaining only the strict upper triangle of the distance matrix.
     """
     M = coords.shape[0]
-    # 构造 (M, M, 3) 的差分张量
+    # Broadcast coordinate differences into a tensor of shape (M, M, 3).
     diff = coords[:, None, :] - coords[None, :, :]  # shape = (M, M, 3)
-    # 计算每对(i,j) 的距离矩阵
+    # Evaluate the pairwise Euclidean distance matrix.
     dist_mat = np.linalg.norm(diff, axis=-1)        # shape = (M, M)
-    # 只取上三角 i<j 的元素
+    # Retain only off-diagonal pairs with i < j.
     i, j = np.triu_indices(M, k=1)
     return dist_mat[i, j]
 
@@ -74,9 +77,9 @@ def collect_connector_atom(pep_chain, cdr_pos_set, connector_len):
         head_connector = pep_chain.atom37_positions[cdr_start - connector_len : cdr_start, indices, :]
         tail_connector = pep_chain.atom37_positions[cdr_end : cdr_end + connector_len, indices, :]
 
-        # 拼 head+tail → (2*connector_len, 3)
+        # Concatenate N- and C-terminal connector coordinates, yielding shape (2*connector_len, 3).
         connector = np.concatenate([head_connector, tail_connector], axis=0)
-        # 计算距离向量，长度 = (2*connector_len)*(2*connector_len-1)/2
+        # Convert coordinates to a pairwise-distance vector of length (2*connector_len)*(2*connector_len-1)/2.
         distance = calc_distance(connector) # Calculate distance between each residues
         full_connector.append(distance)
 
@@ -106,8 +109,8 @@ def output_connetor(ids_list, full_connector_structures, output_filename):
     df.insert(0, "ID", ids_list)
     df.to_csv(output_filename, sep='\t', index=False)
 
-def main(table_path, pdb_path, output_path, connector_len, model=None):
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"  # 禁用并行化
+def main(table_path, pdb_path, output_path, connector_len, model=None, model_lock=None):
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Disable Hugging Face tokenizer parallelism.
     print(f"table_path: {table_path}\npdb_path: {pdb_path}\noutput_path: {output_path}\nconnector_len:{connector_len}\n")
 
     if not os.path.exists(output_path):
@@ -115,6 +118,12 @@ def main(table_path, pdb_path, output_path, connector_len, model=None):
     
     passed_pdbs_folder = os.path.join(output_path, 'passed_pdbs/')
     os.makedirs(passed_pdbs_folder, exist_ok=True)
+
+    def _locked(fn, *args, **kwargs):
+        if model_lock is not None:
+            with model_lock:
+                return fn(*args, **kwargs)
+        return fn(*args, **kwargs)
 
 
     atom_file = os.path.join(output_path, 'ca_distance.tsv')
@@ -126,9 +135,9 @@ def main(table_path, pdb_path, output_path, connector_len, model=None):
     model = ESM3.from_pretrained("esm3_sm_open_v1", device=torch.device("cpu")) if model is None else model
 
     with open(table_path, mode='r', encoding='utf-8') as file:
-        reader = list(csv.DictReader(file, delimiter='\t'))  # 一次性将所有内容加载到内存中 (For TSV)
+        reader = list(csv.DictReader(file, delimiter='\t'))  # Load the complete TSV table into memory.
     
-    # 缓存所有存在的 PDB 文件，减少频繁的 I/O 文件检查
+    # Cache PDB filenames present in the directory to avoid repeated filesystem queries.
     existing_pdb_files = set(os.listdir(pdb_path))
 
     cdr_keys = ['Sequence', 'CDR1', 'CDR2', 'CDR3', 'PDBChain']
@@ -185,16 +194,16 @@ def main(table_path, pdb_path, output_path, connector_len, model=None):
 
         connector_atom_distances_list.append(collect_connector_atom(pep_chain, cdr_pos_set, connector_len))
 
-        structure_raw_embeddings, structure_pre_q_embeddings, structure_q_embeddings, structure_tokens = tokenization(model, pep_chain)
+        structure_raw_embeddings, structure_pre_q_embeddings, structure_q_embeddings, structure_tokens = _locked(tokenization, model, pep_chain)
         
         connector_raw_embeddings = collect_connector(structure_raw_embeddings, cdr_pos_set, connector_len)
         connector_pre_q_embeddings = collect_connector(structure_pre_q_embeddings, cdr_pos_set, connector_len)
         connector_q_embeddings = collect_connector(structure_q_embeddings, cdr_pos_set, connector_len)
         connector_tokens = collect_connector(structure_tokens, cdr_pos_set, connector_len)
 
-        connector_raw_embeddings_list.append(connector_raw_embeddings.detach().cpu().numpy())
-        connector_pre_q_embeddings_list.append(connector_pre_q_embeddings.detach().cpu().numpy())
-        connector_q_embeddings_list.append(connector_q_embeddings.detach().cpu().numpy())
+        connector_raw_embeddings_list.append(connector_raw_embeddings.detach().float().cpu().numpy())
+        connector_pre_q_embeddings_list.append(connector_pre_q_embeddings.detach().float().cpu().numpy())
+        connector_q_embeddings_list.append(connector_q_embeddings.detach().float().cpu().numpy())
         connector_tokens_list.append(connector_tokens.detach().cpu().numpy())
 
         # Copy passed files
@@ -214,7 +223,7 @@ if __name__ == "__main__":
     parser.add_argument("output_path", type=str, help="Path to the output directory")
     # parser.add_argument("extracted_pdb_path", type=str, help="Path to the extract selected pdb output directory")
 
-    # 可选参数
+    # Optional arguments.
     # parser.add_argument("--gpu", type=int, default=0, help="ID of the GPU to use (default: 0)")
     parser.add_argument("--connector_len", type=int, default=2, help="Connector length used in analysis (default: 2)")
 

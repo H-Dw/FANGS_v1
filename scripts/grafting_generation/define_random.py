@@ -3,7 +3,7 @@ import numpy as np
 import os
 import secrets
 
-# 可选：用于兼容 PyTorch、TensorFlow、其他深度学习库
+# Optional imports, retained for compatibility with PyTorch, TensorFlow, and related libraries.
 try:
     import torch
 except ImportError:
@@ -38,15 +38,17 @@ except ImportError:
 
 def set_global_seed(seed: int):
     """
-    设置所有常见随机数生成库的随机种子，确保结果可复现。
+    Seed the random-number generators used by common numerical libraries.
+
+    A shared seed makes subsequent stochastic sampling reproducible.
     """
-    os.environ['PYTHONHASHSEED'] = str(seed)  # 控制Python哈希随机性
-    random.seed(seed)                         # Python标准库
+    os.environ['PYTHONHASHSEED'] = str(seed)  # Fix Python hash randomization.
+    random.seed(seed)                         # Python standard library.
     np.random.seed(seed)                      # NumPy
 
     if torch is not None:
         torch.manual_seed(seed)               # CPU
-        torch.cuda.manual_seed_all(seed)      # 所有GPU（若可用）
+        torch.cuda.manual_seed_all(seed)      # All visible GPUs, when CUDA is available.
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
@@ -54,25 +56,27 @@ def set_global_seed(seed: int):
         tf.random.set_seed(seed)
 
     if sklearn is not None:
-        # sklearn 多数函数需手动传 random_state，未提供全局方法
+        # Most scikit-learn estimators require an explicit random_state; no process-wide seed is provided.
         sklearn_set_config(transform_output='pandas')
 
     if transformers is not None:
         transformers.set_seed(seed)
 
-    # LightGBM 和 XGBoost 多数模型需手动传 seed，无法全局设置
+    # LightGBM and XGBoost require a model-level seed and cannot be seeded globally.
 
     print(f"Global random seed: {seed}")
 
 def init_seed(seed = None) -> int:
     """
-    如果 seed=None 则自动生成一个随机种子，设置全局随机状态并打印种子。
-    返回最终使用的 seed（便于记录 / 日志）。
+    Initialize the global random state and return the seed that was applied.
+
+    When ``seed`` is ``None``, a seed is drawn uniformly from ``[0, 2**31)``.
+    The selected value is printed so that it can be recorded in the run log.
     """
     if seed is None:
-        # 生成 0 .. 2**31-1 范围内的随机种子（适配大多数库）
+        # Draw a seed from [0, 2**31), a range accepted by most numerical libraries.
         seed = secrets.randbelow(2**31)
-        # 你也可以使用 secrets.randbits(32) 来获得 32-bit 值
+        # Alternatively, secrets.randbits(32) yields an unsigned 32-bit integer.
 
     set_global_seed(seed)
     print(f"Global random seed:  {seed}")

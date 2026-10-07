@@ -28,12 +28,12 @@ def find_cdr_start(pep_chain, cdr):
     start = None
     end = None
     # print(f'Find CDR {cdr}')
-    # 检查cdr是否在full_seq中
+    # Confirm that the CDR subsequence occurs in the full chain sequence.
     if cdr == None or cdr not in full_seq:
         print(f"WARNNING: CDR sequence '{cdr}' not found!") 
         # NOTE sometime foldseek's aligned sequence miss some residues, which will cause the CDR could not be found in esm3 program 
         return start, end
-    # 如果cdr存在，找到它的起始位置
+    # When the CDR is present, record its start index in the chain sequence.
     start = full_seq.index(cdr)
     end = start + len(cdr)   # +1
     return start, end
@@ -290,82 +290,120 @@ def sequence_generate(model, prompt:ESMProtein, sequence_sample:int, linker_len)
         generated_sequences.append(sequence_generation)
     return generated_sequences
 
-def protein_generate(model, structure_sample:int, prompt:torch.Tensor, template_chain:ProteinChain, motifs_inds:np.arange, motifs_inds_in_generation:np.arange, designed_sequence:str, ag, temperature=0.7):
+def _is_cuda_oom(exc: BaseException) -> bool:
+    oom_cls = getattr(torch.cuda, "OutOfMemoryError", None)
+    if oom_cls is not None and isinstance(exc, oom_cls):
+        return True
+    return "out of memory" in str(exc).lower()
+
+
+def protein_generate(model, structure_sample:int, prompt:torch.Tensor, template_chain:ProteinChain, motifs_inds:np.arange, motifs_inds_in_generation:np.arange, designed_sequence:str, ag, temperature=0.7, batch_size=1):
     all_generated_designs = []
     pass_generated_designs = []
-    c_pass = "Fail"
+    batch_size = max(1, int(batch_size))
     # We may need to sample more generations from ESM and sort by the generations with the highest predicted TM-score (pTM) by ESM3.
-    print(f'Generate {structure_sample} structure')
-    for i in range(structure_sample):
-        num_tokens_to_decode = (prompt.structure == 4096).sum().item()
+    print(f'Generate {structure_sample} structure (batch_size={batch_size})')
+    num_tokens_to_decode = (prompt.structure == 4096).sum().item()
+    generation_config = GenerationConfig(
+        track="structure",
+        num_steps=num_tokens_to_decode,
+        temperature=temperature,
+    )
 
-        if num_tokens_to_decode != 0:
-            structure_generation = model.generate(
-                prompt,
-                GenerationConfig(
-                    # Generate a structure.
-                    track="structure",
-                    # Sample one token per forward pass of the model.
-                    num_steps=num_tokens_to_decode,
-                    # Sampling temperature trades perplexity with diversity.
-                    temperature=temperature,
-                )
-            )
-            print("structure_generation length:", len(structure_generation))
-        else:
-            structure_generation = prompt
-
+    def _prepare_decode_input(structure_generation):
         # When using antigen to generate complex, the designed protein need to extract, unless it will happen 'device-side assert triggered'
-        if ag != '':
-            # Extract the designed protein from complex
-            design_len = len(designed_sequence) + 2   # encoded design need more two letter
-            design_sequence = structure_generation.sequence[:design_len].clone()
-            design_structure = structure_generation.structure[:design_len].clone()
+        if ag == '':
+            return structure_generation
+        design_len = len(designed_sequence) + 2   # encoded design need more two letter
+        design_sequence = structure_generation.sequence[:design_len].clone()
+        design_structure = structure_generation.structure[:design_len].clone()
+        design_sequence[-1] = 2
+        design_structure[-1] = 4097
+        return ESMProteinTensor(sequence=design_sequence, structure=design_structure)
 
-            # Replace the <break> as <eos>
-            design_sequence[-1] = 2
-            design_structure[-1] = 4097
-
-            design_protein = ESMProteinTensor(sequence=design_sequence, structure=design_structure)
-            structure_generation_protein:ESMProtein = model.decode(design_protein)
-        
-        else:
-            structure_generation_protein:ESMProtein = model.decode(structure_generation)
-
-        # Decodes structure tokens to backbone coordinates.
+    def _evaluate_decoded_protein(structure_generation, structure_generation_protein):
+        print("structure_generation length:", len(structure_generation))
         generation_chain = structure_generation_protein.to_protein_chain()
         ptm = structure_generation_protein.ptm.item()
         print("\nPTM of generated protein: {:.3f}".format(ptm))
 
-        # Align the generated structure to the original structure using the motif residues
-        # print(f"mobile_inds: {motifs_inds_in_generation}\ntarget_inds: {motifs_inds}")
-
-        # Check motif_inds
         generated_motif_sequence = generation_chain[motifs_inds_in_generation].sequence
         template_motif_sequence = template_chain[motifs_inds].sequence
         print(f"Template motif: {template_motif_sequence}\tGenerated motif: {generated_motif_sequence}")
         if generated_motif_sequence != template_motif_sequence:
             print("ERROR in 'motifs_inds' selection")
-            continue
+            return None
 
         generation_chain_aligned = generation_chain.align(template_chain, mobile_inds=motifs_inds_in_generation, target_inds=motifs_inds)
         target_crmsd = generation_chain_aligned.rmsd(template_chain, mobile_inds=motifs_inds_in_generation, target_inds=motifs_inds)
         print("Target cRMSD of the motif in the generated structure vs the original structure: {:.3f}".format(target_crmsd))
 
-        # Identify weather the generation is successful (Recommand: 0.8 pTM and 1.5 cRMSD)
         c_pass = "Pass" if (float(target_crmsd) < 1.5 and float(ptm) > 0.8) else "Fail"
         print(f"Constrained site RMSD: {target_crmsd:.3f} Ang {c_pass}")
 
-        # Full result
-        # Transformat to ESMProtein
         structure_generation_protein_aligned = ESMProtein.from_protein_chain(generation_chain_aligned)
-        # all_generated_designs.append((generation_chain_aligned.sequence, structure_generation_protein_aligned, ptm, target_crmsd))
+        return (generation_chain_aligned.sequence, structure_generation_protein_aligned, ptm, target_crmsd, c_pass)
 
-        if c_pass == "Pass":
-            pass_generated_designs.append((generation_chain_aligned.sequence, structure_generation_protein_aligned, ptm, target_crmsd))
-        
-        all_generated_designs.append((generation_chain_aligned.sequence, structure_generation_protein_aligned, ptm, target_crmsd))
-            
+    def _generate_token_batch(num_samples: int):
+        if num_tokens_to_decode == 0:
+            return [prompt] * num_samples
+        if num_samples == 1 and batch_size <= 1:
+            return [model.generate(prompt, generation_config)]
+        return model.generate_batch(prompt, generation_config, num_samples=num_samples)
+
+    def _decode_token_batch(tensors):
+        print(f'Decode {len(tensors)} structure (batch_size={len(tensors)})')
+        if len(tensors) == 1:
+            return [model.decode(tensors[0])]
+        return model.decode_batch(tensors)
+
+    def _decode_with_oom_fallback(tensors):
+        decoded = []
+        remaining_tensors = list(tensors)
+        decode_bs = len(remaining_tensors) if remaining_tensors else 1
+        while remaining_tensors:
+            decode_bs = min(decode_bs, len(remaining_tensors))
+            chunk = remaining_tensors[:decode_bs]
+            try:
+                decoded.extend(_decode_token_batch(chunk))
+                remaining_tensors = remaining_tensors[decode_bs:]
+            except Exception as e:
+                if decode_bs > 1 and _is_cuda_oom(e):
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    decode_bs = max(1, decode_bs // 2)
+                    print(f"[Warning] CUDA OOM during structure decode; reducing decode_batch_size to {decode_bs}")
+                    continue
+                raise
+        return decoded
+
+    remaining = structure_sample
+    cur_bs = min(batch_size, remaining) if remaining > 0 else 1
+    while remaining > 0:
+        cur_bs = min(cur_bs, remaining)
+        try:
+            structure_generations = _generate_token_batch(cur_bs)
+        except Exception as e:
+            if cur_bs > 1 and _is_cuda_oom(e):
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                cur_bs = max(1, cur_bs // 2)
+                print(f"[Warning] CUDA OOM during structure generation; reducing structure_batch_size to {cur_bs}")
+                continue
+            raise
+
+        prepared = [_prepare_decode_input(item) for item in structure_generations]
+        decoded_proteins = _decode_with_oom_fallback(prepared)
+        for structure_generation, structure_generation_protein in zip(prepared, decoded_proteins):
+            design = _evaluate_decoded_protein(structure_generation, structure_generation_protein)
+            if design is None:
+                continue
+            sequence, aligned_protein, ptm, target_crmsd, c_pass = design
+            if c_pass == "Pass":
+                pass_generated_designs.append((sequence, aligned_protein, ptm, target_crmsd))
+            all_generated_designs.append((sequence, aligned_protein, ptm, target_crmsd))
+        remaining -= cur_bs
+
     return pass_generated_designs, all_generated_designs
 
 
@@ -387,21 +425,35 @@ def output_designs(designs, filename, path):
             pdb_filename = os.path.join(pdb_path, f"{fr_path}_generated_{i}.pdb")
             designs[i][2].to_pdb(pdb_filename)
 
-def main(graft_info_path, output_path, structure_sample, sample_to_store, sequence_sample, linker_len, linker_design, device, cpu_num, ag, len_limit, model=None, s_temperature=0.7):
+def main(graft_info_path, output_path, structure_sample, sample_to_store, sequence_sample, linker_len, linker_design, device, cpu_num, ag, len_limit, model=None, model_lock=None, s_temperature=0.7, output_stream=None, structure_batch_size=1, bf16=False):
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
     # cpu_num = 16
     set_cpu(cpu_num)
 
     device = torch.device(device)
-    model = ESM3.from_pretrained("esm3_sm_open_v1").to(device) if model is None else model
+    output_stream = output_stream or sys.stdout
+    owns_model = model is None
+    if model is None:
+        model = ESM3.from_pretrained("esm3_sm_open_v1").to(device)
+    # Only cast a self-owned model: a shared model may already have fp32
+    # structure encoder/decoder registered as submodules, and re-casting
+    # would silently convert them to bf16.
+    if bf16 and owns_model and device.type == 'cuda':
+        model = model.to(torch.bfloat16)
     model.eval()
+
+    def _locked(fn, *args, **kwargs):
+        if model_lock is not None:
+            with model_lock:
+                return fn(*args, **kwargs)
+        return fn(*args, **kwargs)
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
     if linker_design != '':
         linker_len = len(linker_design)
-    print(f'Linker length will be generated: {linker_len}\nProvided linker: {linker_design}\nSamples to generate structure: {structure_sample}\nSamples to store: {sample_to_store}\nSamples to generate sequence (function when linker need to be generated): {sequence_sample}')
+    print(f'Linker length will be generated: {linker_len}\nProvided linker: {linker_design}\nSamples to generate structure: {structure_sample}\nStructure batch size: {structure_batch_size}\nModel dtype: {next(model.parameters()).dtype}\nSamples to store: {sample_to_store}\nSamples to generate sequence (function when linker need to be generated): {sequence_sample}', file=output_stream)
 
     # Read info about regions to be grafted
     graft_region_info = pd.read_csv(graft_info_path, sep = "\t")
@@ -418,7 +470,7 @@ def main(graft_info_path, output_path, structure_sample, sample_to_store, sequen
         if index == 0:
             graft_pep   = row['pdb_path']
             graft_chain = row['chain'] if pd.notna(row['chain']) else None
-            # 保留 None 在位置上
+            # Preserve None so that an absent CDR retains its positional slot.
             graft_regions = [get_val(c) for c in cols]
         else:
             target_pep   = row['pdb_path']
@@ -463,7 +515,14 @@ def main(graft_info_path, output_path, structure_sample, sample_to_store, sequen
 
         # Design CDR in all FRs, input motif information
         try:
-            designed_prompt, motif_inds_in_generation, sequence_prompt = prompt_design(model=model, linker_len=linker_len, target_chain=target_dipep_chain, template_chain=graft_dipep_chain, template_pos=grafts_start_end_pos, target_pos=replaces_start_end_pos, motifs_sequence=grafts_sequence, motifs_atom37_positions=grafts_atom37_positions, graft_regions=graft_regions, target_regions=target_cdrs, linker_design=linker_design)
+            designed_prompt, motif_inds_in_generation, sequence_prompt = _locked(
+                prompt_design,
+                model=model, linker_len=linker_len, target_chain=target_dipep_chain,
+                template_chain=graft_dipep_chain, template_pos=grafts_start_end_pos,
+                target_pos=replaces_start_end_pos, motifs_sequence=grafts_sequence,
+                motifs_atom37_positions=grafts_atom37_positions, graft_regions=graft_regions,
+                target_regions=target_cdrs, linker_design=linker_design
+            )
         except Exception as e:
             print(f"[ERROR] occurred in prompt_design for Grafting: {graft_pep} and FR: {target_pep}.  \n graft regions: {graft_regions} \n target cdrs: {target_cdrs}: {e}")
             continue
@@ -476,21 +535,40 @@ def main(graft_info_path, output_path, structure_sample, sample_to_store, sequen
         # Generate complex prompt if provided antigen
         if ag != '':
             print(f'Generate complex prompt based on provided {ag}')
-            # 'designed_prompt' need to be applied at the head
-            designed_prompt = complex_generation(model=model, designed_prompt=designed_prompt, designed_sequence=sequence_prompt, ag_path=ag)
+            designed_prompt = _locked(
+                complex_generation,
+                model=model, designed_prompt=designed_prompt,
+                designed_sequence=sequence_prompt, ag_path=ag
+            )
 
         if linker_len != 0 and linker_design == '':
-            # Generate sequence (fill mask) after structure information has been provided
-            generated_prompts = sequence_generate(model=model, prompt=designed_prompt, sequence_sample=sequence_sample, linker_len=linker_len)
+            generated_prompts = _locked(
+                sequence_generate,
+                model=model, prompt=designed_prompt,
+                sequence_sample=sequence_sample, linker_len=linker_len
+            )
             for designed_prompt in generated_prompts:
-                pass_generated_designs, all_generated_designs = protein_generate(model=model, structure_sample=structure_sample, prompt=designed_prompt, template_chain=graft_dipep_chain, motifs_inds=grafts_inds, motifs_inds_in_generation=motif_inds_in_generation, designed_sequence=sequence_prompt, ag=ag, temperature=s_temperature)
+                pass_generated_designs, all_generated_designs = _locked(
+                    protein_generate,
+                    model=model, structure_sample=structure_sample, prompt=designed_prompt,
+                    template_chain=graft_dipep_chain, motifs_inds=grafts_inds,
+                    motifs_inds_in_generation=motif_inds_in_generation,
+                    designed_sequence=sequence_prompt, ag=ag, temperature=s_temperature,
+                    batch_size=structure_batch_size
+                )
                 for design in pass_generated_designs:
                     pass_target_generated_designs.append((target_pep, design[0], design[1], design[2], design[3]))
                 for design in all_generated_designs:
                     all_target_generated_designs.append((target_pep, design[0], design[1], design[2], design[3]))
         else:  # Non linker or linker was specific
-            # Output format: sequence, aligned_structure_prediction, ptm, crmsd
-            pass_generated_designs, all_generated_designs = protein_generate(model=model, structure_sample=structure_sample, prompt=designed_prompt, template_chain=graft_dipep_chain, motifs_inds=grafts_inds, motifs_inds_in_generation=motif_inds_in_generation, designed_sequence=sequence_prompt, ag=ag)
+            pass_generated_designs, all_generated_designs = _locked(
+                protein_generate,
+                model=model, structure_sample=structure_sample, prompt=designed_prompt,
+                template_chain=graft_dipep_chain, motifs_inds=grafts_inds,
+                motifs_inds_in_generation=motif_inds_in_generation,
+                designed_sequence=sequence_prompt, ag=ag, temperature=s_temperature,
+                batch_size=structure_batch_size
+            )
             for design in pass_generated_designs:
                 pass_target_generated_designs.append((target_pep, design[0], design[1], design[2], design[3]))
             for design in all_generated_designs:
@@ -550,11 +628,13 @@ if __name__ == "__main__":
     parser.add_argument("--linker_len", type=int, default=0, help="Auto generate linker based on linker_len")
     parser.add_argument("--linker_design", type=str, default='', help="Using linker provided")
     parser.add_argument("--structure_sample", type=int, default=15, help="structure_sample")
+    parser.add_argument("--structure_batch_size", type=int, default=1, help="GPU mini-batch size for same-prompt structure samples")
     parser.add_argument("--sequence_sample", type=int, default=5, help="sequence_sample")
     parser.add_argument("--sample_to_store", type=int, default=5, help="sample_to_store")
     parser.add_argument("--cpu_num", type=int, default=8, help="CPU used in program")
     parser.add_argument("--ag", type=str, default='', help="Path to the antigen PDB path")
-    parser.add_argument("--len_limit", type=int, default=-1, help="len_limit")    
+    parser.add_argument("--len_limit", type=int, default=-1, help="len_limit")
+    parser.add_argument("--bf16", action="store_true", help="Cast ESM3 to bfloat16 for faster GPU generation")
 
     args = parser.parse_args()
 
@@ -567,7 +647,7 @@ if __name__ == "__main__":
     # sequence_sample = 5
     # sample_to_store = 5  # Final seleceted designs
 
-    main(graft_info_path=args.graft_info_path, output_path=args.output_path, structure_sample=args.structure_sample, sample_to_store=args.sample_to_store, sequence_sample=args.sequence_sample, linker_len=args.linker_len, linker_design = args.linker_design, device=device, cpu_num=args.cpu_num, ag=args.ag, len_limit=args.len_limit)
+    main(graft_info_path=args.graft_info_path, output_path=args.output_path, structure_sample=args.structure_sample, sample_to_store=args.sample_to_store, sequence_sample=args.sequence_sample, linker_len=args.linker_len, linker_design = args.linker_design, device=device, cpu_num=args.cpu_num, ag=args.ag, len_limit=args.len_limit, structure_batch_size=args.structure_batch_size, bf16=args.bf16)
 
     end_time = time.time()
     runtime = end_time - start_time

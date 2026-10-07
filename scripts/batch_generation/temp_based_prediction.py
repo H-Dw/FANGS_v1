@@ -28,12 +28,12 @@ def find_cdr_start(pep_chain, cdr):
     start = None
     end = None
     # print(f'Find CDR {cdr}')
-    # 检查cdr是否在full_seq中
+    # Test whether the CDR occurs in the full chain sequence.
     if cdr == None or cdr not in full_seq:
         print(f"WARNNING: CDR sequence '{cdr}' not found!") 
         # NOTE sometime foldseek's aligned sequence miss some residues, which will cause the CDR could not be found in esm3 program 
         return start, end
-    # 如果cdr存在，找到它的起始位置
+    # If the CDR is present, record its start index.
     start = full_seq.index(cdr)
     end = start + len(cdr)   # +1
     return start, end
@@ -418,7 +418,7 @@ def main(graft_info_path, output_path, structure_sample, sample_to_store, sequen
         if index == 0:
             graft_pep   = row['pdb_path']
             graft_chain = row['chain'] if pd.notna(row['chain']) else None
-            # 保留 None 在位置上
+            # Preserve None so that a missing CDR retains its positional slot.
             graft_regions = [get_val(c) for c in cols]
         else:
             target_pep   = row['pdb_path']

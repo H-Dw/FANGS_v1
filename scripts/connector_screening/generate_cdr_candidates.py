@@ -24,8 +24,9 @@ def safe_mkdir(path: str):
 
 def link_pdb_for_candidate(pdb_file: str, out_dir: str, cand_name: str):
     """
-    Hard link pdb_file into out_dir; rename as <base>_<cand_name>.pdb
-    cand_name 可能同时包含多个CDR组合，例如: "CDR1-GGSE_CDR3-RRT"
+    Create a hard link to pdb_file in out_dir, named <base>_<cand_name>.pdb.
+    cand_name may encode several CDR fragment combinations at once,
+    for example "CDR1-GGSE_CDR3-RRT".
     """
     safe_mkdir(out_dir)
 

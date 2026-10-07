@@ -1,28 +1,29 @@
 from pymol import cmd
 import math
 
-# 注册命令，使其可以在 PyMOL 命令行直接调用
+# Register the command for direct invocation from the PyMOL command line.
 @cmd.extend
 def select_nearest_residues(target_sel, n_neighbors=15, out_sel="nearest15", protein_obj="all"):
     """
     DESCRIPTION
-        根据 CA 原子的距离，选择目标区域周围最近的 N 个氨基酸（不包含目标自身）。
+        Select the N residues nearest to a target region on the basis of Cα distances,
+        excluding the target residues themselves.
 
     USAGE
         select_nearest_residues target_sel, [n_neighbors], [out_sel], [protein_obj]
 
     ARGS
-        target_sel  : 目标选区（例如：resi 100）
-        n_neighbors : 要选出的最近残基数量（默认 15）
-        out_sel     : 输出的选区名称（默认 nearest15）
-        protein_obj : 搜索范围，默认是所有蛋白（all）
+        target_sel  : Target selection (for example, resi 100).
+        n_neighbors : Number of nearest residues to retain (default, 15).
+        out_sel     : Name of the output selection (default, nearest15).
+        protein_obj : Search scope; all objects by default (all).
     """
     
-    # 确保 n_neighbors 是整数
+    # Coerce n_neighbors to an integer.
     n_neighbors = int(n_neighbors)
 
-    # 1. 获取目标区域的所有 CA 原子坐标
-    # 逻辑：目标选区 -> 限制为 CA -> 获取模型
+    # 1. Collect Cα coordinates for the target region.
+    # Selection logic: target selection, restrict to CA, then retrieve the model.
     target_ca_sel = f"({target_sel}) and name CA"
     target_model = cmd.get_model(target_ca_sel)
 
@@ -30,12 +31,12 @@ def select_nearest_residues(target_sel, n_neighbors=15, out_sel="nearest15", pro
         print(f"[Error] Target selection '{target_sel}' contains no CA atoms.")
         return
 
-    # 提取目标坐标列表
+    # Extract the target coordinate list.
     target_coords = [a.coord for a in target_model.atom]
 
-    # 2. 获取候选原子（蛋白中所有 CA，但排除目标区域自身）
-    # 关键优化：使用 PyMOL 选择逻辑 'and not' 直接排除自身，避免在循环中检查
-    # byres 确保排除的是整个残基，不仅仅是重叠的原子
+    # 2. Collect candidate atoms: all protein Cα atoms outside the target region.
+    # Exclude the target with the PyMOL operator 'and not' rather than testing each atom in the loop.
+    # byres excludes the entire residue, not only atoms that overlap the target selection.
     candidate_sel = f"({protein_obj}) and polymer.protein and name CA and not (byres ({target_sel}))"
     candidate_model = cmd.get_model(candidate_sel)
     
@@ -45,11 +46,11 @@ def select_nearest_residues(target_sel, n_neighbors=15, out_sel="nearest15", pro
 
     neighbors = []
 
-    # 3. 计算距离
-    # 遍历所有候选 CA 原子
+    # 3. Compute distances.
+    # Iterate over all candidate Cα atoms.
     for atom in candidate_model.atom:
-        # 计算该原子到目标区域所有 CA 的距离，取最小值
-        # 兼容性写法，防止旧版 Python 没有 math.dist
+        # Minimum distance from this atom to any target Cα.
+        # Compatibility branch for Python versions that do not provide math.dist.
         if hasattr(math, 'dist'):
             min_dist = min(math.dist(atom.coord, t_coord) for t_coord in target_coords)
         else:
@@ -58,11 +59,11 @@ def select_nearest_residues(target_sel, n_neighbors=15, out_sel="nearest15", pro
                 for t_coord in target_coords
             )
         
-        # 存储元组: (原子ID, 最小距离, 残基信息用于打印)
+        # Store (atom identifier, minimum distance, residue label for reporting).
         neighbors.append((atom.id, min_dist, f"{atom.chain}/{atom.resi}{atom.resn}"))
 
-    # 4. 排序并截取前 N 个
-    # 按距离从小到大排序
+    # 4. Rank candidates and retain the first N.
+    # Sort by ascending distance.
     neighbors.sort(key=lambda x: x[1])
     top_n = neighbors[:n_neighbors]
 
@@ -70,17 +71,17 @@ def select_nearest_residues(target_sel, n_neighbors=15, out_sel="nearest15", pro
         print("[Info] No residues found.")
         return
 
-    # 5. 构建 Selection
-    # 使用原子 ID (id) 构建选择集最快且最准确，格式为: id 1+2+3...
+    # 5. Construct the selection.
+    # Atom identifiers give the most direct selection, in the form id 1+2+3...
     id_list = [str(item[0]) for item in top_n]
     id_sel_str = "+".join(id_list)
     
-    # 先选中这些 CA 原子
+    # Select these Cα atoms first.
     cmd.select(out_sel, f"id {id_sel_str}")
-    # 扩展选择集到完整的残基 (byres)
+    # Expand the selection to complete residues (byres).
     cmd.select(out_sel, f"byres {out_sel}")
 
-    # 6. 打印结果信息
+    # 6. Report the selected residues.
     print(f"=================================================")
     print(f"[SUCCESS] Selected {len(top_n)} nearest residues into '{out_sel}'.")
     print(f"Target: {target_sel}")
@@ -89,9 +90,9 @@ def select_nearest_residues(target_sel, n_neighbors=15, out_sel="nearest15", pro
         print(f"  {i+1}. {res_info} \t(Dist: {dist:.2f} A)")
     print(f"=================================================")
 
-# === 示例调用（如果是脚本模式直接运行以下行） ===
-# 如果你在 PyMOL 界面中加载此脚本，不需要取消注释下面的行，
-# 直接在 PyMOL 命令行输入: select_nearest_residues target_region
+# === Example invocation (uncomment the block below to run this file as a script) ===
+# When the script is loaded in the PyMOL GUI, leave the block below commented
+# and enter: select_nearest_residues target_region
 '''
 select_nearest_residues(
     target_sel="target_region",

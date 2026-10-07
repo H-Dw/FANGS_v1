@@ -2,7 +2,7 @@
 """
 compute_pairwise_distances.py
 
-用法示例：
+Example:
 python compute_pairwise_distances.py \
     --groups_tsv grouped_input.tsv \
     --emb_tsv raw_embeddings.tsv \
@@ -68,7 +68,7 @@ def compute_rmsd_using_usalign(usalign_path: str, pdb1: str, pdb2: str, timeout:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except Exception as e:
-        print(f"[USalign] 调用失败: {e}  cmd={' '.join(cmd)}")
+        print(f"[USalign] invocation failed: {e}  cmd={' '.join(cmd)}")
         return None
 
     out = (proc.stdout or "") + "\n" + (proc.stderr or "")
@@ -82,34 +82,34 @@ def compute_rmsd_using_usalign(usalign_path: str, pdb1: str, pdb2: str, timeout:
 # -------------------------
 def load_embeddings(emb_tsv: str, id_col: str = "ID") -> Dict[str, np.ndarray]:
     """
-    载入 raw_embeddings.tsv，返回 id -> np.array(embedding)
-    支持两种常见格式：
-      A) 多列：ID | emb0 | emb1 | emb2 ...
-      B) 一列：ID | embedding  （embedding 为 "1.0,2.0,3.0" 或 "[1.0, 2.0, 3.0]"）
+    Load raw_embeddings.tsv and return a mapping from identifier to embedding vector.
+    Two layouts are accepted:
+      A) Multiple columns: ID | emb0 | emb1 | emb2 ...
+      B) A single column: ID | embedding, where embedding is "1.0,2.0,3.0" or "[1.0, 2.0, 3.0]".
     """
     df = pd.read_csv(emb_tsv, sep='\t', dtype=str)
     if id_col not in df.columns:
-        raise ValueError(f"Embeddings table 没有找到 ID 列: {id_col}")
+        raise ValueError(f"Embeddings table has no identifier column: {id_col}")
 
-    # 尝试识别 numeric 列（除 ID 以外）
+    # Identify numeric columns other than the identifier.
     other_cols = [c for c in df.columns if c != id_col]
     embeddings: Dict[str, np.ndarray] = {}
 
-    # case A: 多 numeric 列
-    # 尝试将 other_cols 转为 numeric；如果大多数能转为 numeric，我们就采用这种方式
+    # Case A: multiple numeric columns.
+    # Coerce the remaining columns to numeric values and accept this layout when most entries convert.
     if len(other_cols) >= 2:
         numeric_df = df[other_cols].apply(pd.to_numeric, errors='coerce')
         non_na_ratio = numeric_df.notna().sum().sum() / (numeric_df.shape[0] * numeric_df.shape[1])
         if non_na_ratio > 0.5:
-            # 采用多列方式
+            # Use the multi-column layout.
             for _, row in pd.concat([df[[id_col]], numeric_df], axis=1).iterrows():
                 key = str(row[id_col]).strip()
                 vec = row[other_cols].values.astype(float)
                 embeddings[key] = np.asarray(vec, dtype=float)
             return embeddings
 
-    # case B: single column embedding (文本)
-    # 找第一个非 ID 列当作 embedding 列（或名为 'embedding'）
+    # Case B: a single text column containing the embedding.
+    # Use the column named 'embedding', or otherwise the first non-identifier column.
     emb_col = None
     if 'embedding' in df.columns:
         emb_col = 'embedding'
@@ -117,7 +117,7 @@ def load_embeddings(emb_tsv: str, id_col: str = "ID") -> Dict[str, np.ndarray]:
         emb_col = other_cols[0]
 
     if emb_col is None:
-        raise ValueError("无法识别 embeddings 列格式：既没有数值列，也没有 'embedding' 列。")
+        raise ValueError("Unrecognized embedding-column format: neither numeric columns nor an 'embedding' column were found.")
 
     for _, row in df.iterrows():
         key = str(row[id_col]).strip()
@@ -125,15 +125,15 @@ def load_embeddings(emb_tsv: str, id_col: str = "ID") -> Dict[str, np.ndarray]:
         if pd.isna(raw):
             continue
         s = str(raw).strip()
-        # 去掉中括号
+        # Remove enclosing brackets.
         s = s.strip('[]() ')
         parts = [p.strip() for p in re.split(r'[,\s]+', s) if p.strip() != ""]
         try:
             vec = np.array([float(x) for x in parts], dtype=float)
             embeddings[key] = vec
         except Exception as e:
-            # 解析失败跳过该行
-            print(f"[Embeddings] 解析失败 id={key} raw='{raw}': {e}")
+            # Skip rows that cannot be parsed.
+            print(f"[Embeddings] failed to parse id={key} raw='{raw}': {e}")
             continue
 
     return embeddings

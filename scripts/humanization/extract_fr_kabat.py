@@ -2,16 +2,21 @@
 """
 extract_fr_kabat.py
 
-从 ANARCI (Kabat scheme) 导出的 CSV 编号表（第一列 Position，其后为各序列列）
-提取 FR1+FR2+FR3+FR4（Kabat 编号区间，heavy/light 可选或自动识别），并输出到 FASTA。
+Extract framework regions FR1, FR2, FR3, and FR4 from a CSV numbering table
+exported by ANARCI under the Kabat scheme. The first column is Position, and
+the remaining columns contain the individual sequences. Kabat numbering
+intervals are applied for heavy or light chains, which may be specified
+explicitly or inferred automatically, and the concatenated framework sequence
+is written to FASTA.
 
-用法示例:
+Example:
   python extract_fr_kabat.py -i anarci_kabat.csv -o fr_kabat.fasta --chain-type auto
 
-参数:
-  --chain-type  heavy | light | auto  (默认 auto)
-  --keep-gaps   若设置，则在输出序列中保留 '-'（对齐 gap）；默认去掉 gaps
-  --wrap N      FASTA 折行长度 (默认 60)
+Arguments:
+  --chain-type  heavy | light | auto  (default: auto)
+  --keep-gaps   If set, retain alignment gaps ('-') in the output sequences;
+                gaps are removed by default.
+  --wrap N      FASTA line-wrap length (default: 60)
 """
 import argparse
 import pandas as pd

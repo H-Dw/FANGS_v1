@@ -146,6 +146,8 @@ class GeometricReasoningOriginalImpl(nn.Module):
         )
         if self.mask_and_zero_frameless:
             attn_out = attn_out.masked_fill(~affine_mask[..., None], 0.0)
-        s = self.out_proj(attn_out)
+        # Coordinate math runs under fp32 autocast (see RotationMatrix.apply);
+        # cast back to the model dtype before the output projection.
+        s = self.out_proj(attn_out.to(self.out_proj.weight.dtype))
 
         return s

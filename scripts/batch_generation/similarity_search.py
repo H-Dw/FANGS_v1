@@ -1,15 +1,14 @@
 import os, subprocess, sys
 import pandas as pd
-import readPDBSeq
-import extraFR_site
 
 # prefix can set as "foldseek" or "mmseqs"
 
-def main(env, Nb_pdb_path, Nb_CDR_file, db_path, output_path, prefix, cpu_num, gpu_id="", extract=True):
+def main(env, Nb_pdb_path, Nb_CDR_file, db_path, output_path, prefix, cpu_num, gpu_id="", extract=True, tmp_dir="tmp"):
     tsv_filename = os.path.join(output_path, os.path.basename(Nb_pdb_path).replace(".pdb", "") + f"_{prefix}_output.tsv")
     extract_file = os.path.join(output_path, os.path.basename(Nb_pdb_path).replace(".pdb", "") + f"_{prefix}_extract.tsv")
 
     if prefix == "mmseqs":
+        import readPDBSeq
         # Build sequences file
         query_fasta_file = os.path.join(output_path, "query.fasta")
 
@@ -23,10 +22,10 @@ def main(env, Nb_pdb_path, Nb_CDR_file, db_path, output_path, prefix, cpu_num, g
     # Select top 1000 protein, ignore e-value
     if prefix == "foldseek":
         # run_command = f"{env}foldseek easy-search {Nb_pdb_path} {db_path} {tsv_filename} tmp --max-seqs 1000 --remove-tmp-files 1 --threads {cpu_num}{gpu_setting} --format-mode 4 --format-output 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,qtmscore,bits,qaln,taln,tseq' > /dev/null 2>&1"
-        run_command = f"{env}foldseek easy-search {Nb_pdb_path} {db_path} {tsv_filename} tmp --max-seqs 1000 --remove-tmp-files 1 --threads {cpu_num}{gpu_setting} --format-mode 4 --format-output 'query,target,fident,alnlen,nident,mismatch,gapopen,qstart,qend,tstart,tend,evalue,qtmscore,bits,qaln,taln,tseq' > /dev/null 2>&1"
+        run_command = f"{env}foldseek easy-search {Nb_pdb_path} {db_path} {tsv_filename} {tmp_dir} --max-seqs 1000 --remove-tmp-files 1 --threads {cpu_num}{gpu_setting} --format-mode 4 --format-output 'query,target,fident,alnlen,nident,mismatch,gapopen,qstart,qend,tstart,tend,evalue,qtmscore,bits,qaln,taln,tseq' > /dev/null 2>&1"
     elif prefix == "mmseqs":
         # run_command = f"{env}mmseqs easy-search {query_fasta_file} {db_path} {tsv_filename} tmp --max-seqs 1000 --remove-tmp-files 1 --threads {cpu_num}{gpu_setting} --format-mode 4 --format-output 'query,target,evalue,qstart,qend,tstart,tend,bits,qaln,taln,tseq' > /dev/null 2>&1"
-        run_command = f"{env}mmseqs easy-search {query_fasta_file} {db_path} {tsv_filename} tmp --max-seqs 1000 --remove-tmp-files 1 --threads {cpu_num}{gpu_setting} --format-mode 4 --format-output 'query,target,fident,alnlen,nident,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qaln,taln,tseq' > /dev/null 2>&1"
+        run_command = f"{env}mmseqs easy-search {query_fasta_file} {db_path} {tsv_filename} {tmp_dir} --max-seqs 1000 --remove-tmp-files 1 --threads {cpu_num}{gpu_setting} --format-mode 4 --format-output 'query,target,fident,alnlen,nident,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qaln,taln,tseq' > /dev/null 2>&1"
 
     else:
         print(f"Error: Program {prefix} do not support (foldseek, mmseqs)")
@@ -69,12 +68,7 @@ def main(env, Nb_pdb_path, Nb_CDR_file, db_path, output_path, prefix, cpu_num, g
     aln_df.to_csv(extract_file, sep='\t', index=False)
 
     if extract:
-        # 根据Foldseek的alignment，获取target（FR）对应的CDR seq和end index
-        # log_file = os.path.join(output_path, f"{prefix}_extra.log")
-        # with open(log_file, "w") as file:
-        #     with redirect_stdout(file):
-        #         extraFR_site.main(Nb_pdb_path, site_info_path, Nb_CDR_file, extract_file, output_path, prefix=prefix)
-
+        import extraFR_site
         try:
             extraFR_site.main(query_pdb=Nb_pdb_path, site_info_path="", cdr_info_path=Nb_CDR_file, extracted_data_path=extract_file, output_path=output_path, prefix=prefix)
         except Exception as e:

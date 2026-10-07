@@ -31,12 +31,12 @@ def merge_pdbs(pdb_files, output_file="merged.pdb"):
                 if not line.startswith(("ATOM", "HETATM")):
                     continue
 
-                # 解析PDB字段
+                # Parse the fixed-width PDB record fields.
                 record = line[:6]
                 atom_name = line[12:16]
                 alt_loc = line[16]
                 res_name = line[17:20]
-                chain_id = "A"   # 统一 chain ID
+                chain_id = "A"   # Assign a uniform chain identifier.
                 x = line[30:38]
                 y = line[38:46]
                 z = line[46:54]
@@ -53,7 +53,7 @@ def merge_pdbs(pdb_files, output_file="merged.pdb"):
 
                 last_orig_res_seq = orig_res_seq
 
-                # 重新格式化 PDB ATOM 行（遵循 PDB v3 格式）
+                # Reformat the ATOM/HETATM record according to the PDB version 3 column layout.
                 new_line = (
                     f"{record:<6}{atom_id:>5} "
                     f"{atom_name:<4}{alt_loc:<1}"
@@ -66,7 +66,7 @@ def merge_pdbs(pdb_files, output_file="merged.pdb"):
                 merged_lines.append(new_line + "\n")
                 atom_id += 1
 
-    # 写入输出文件
+    # Write the merged coordinate records to the output file.
     with open(output_file, "w") as f:
         f.write("".join(merged_lines))
 

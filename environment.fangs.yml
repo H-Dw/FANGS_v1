@@ -1,0 +1,15 @@
+name: fangs
+channels:
+  - https://conda.anaconda.org/conda-forge
+  - https://conda.anaconda.org/bioconda
+  - nodefaults
+dependencies:
+  - python=3.10.14
+  - pip=24.0
+  - mafft=7.525
+  - hmmer=3.3.2
+  - anarci=2024.05.21
+  - biopython=1.84
+  - numpy=1.26.4
+  - pip:
+      - -r requirements-fangs.txt

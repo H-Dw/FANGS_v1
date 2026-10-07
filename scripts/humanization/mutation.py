@@ -12,7 +12,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    # 读取 target 编号表
+    # Read the target numbering table.
     try:
         df = pd.read_csv(args.target, dtype=str)
     except Exception as e:
@@ -21,7 +21,7 @@ def main():
     if 'Position' not in df.columns:
         sys.exit("Error: target CSV must have a 'Position' column")
 
-    # 读取 mutation 表
+    # Read the mutation table.
     try:
         mut_df = pd.read_csv(args.mutation, dtype=str)
     except Exception as e:
@@ -30,7 +30,7 @@ def main():
     if not {'Position','MutAA'}.issubset(mut_df.columns):
         sys.exit("Error: mutation CSV must have 'Position' and 'MutAA' columns")
 
-    # 对每个突变点，批量替换所有序列列
+    # For each mutation site, substitute the residue across all sequence columns.
     seq_cols = [c for c in df.columns if c != 'Position']
     df_mod = df.copy()
     for _, row in mut_df.iterrows():
@@ -40,15 +40,15 @@ def main():
         if not mask.any():
             sys.stderr.write(f"Warning: position {pos} not found in target table, skipping\n")
             continue
-        # 替换这一行所有序列列为突变氨基酸
+        # Replace every sequence entry in this row with the mutant amino acid.
         df_mod.loc[mask, seq_cols] = aa
 
-    # 输出 FASTA：每一列拼成序列，去除 '-'，ID 是列名
+    # Write FASTA: concatenate each column into a sequence, remove gap characters ('-'), and use the column name as the identifier.
     with open(args.output, 'w') as out_f:
         for col in seq_cols:
             seq = ''.join(df_mod[col].tolist()).replace('-', '')
             out_f.write(f">{col}\n")
-            # 按 70 字符换行
+            # Wrap the sequence at 70 characters per line.
             for i in range(0, len(seq), 70):
                 out_f.write(seq[i:i+70] + "\n")
 

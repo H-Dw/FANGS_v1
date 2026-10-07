@@ -6,13 +6,15 @@ from typing import Optional
 
 def extract_sequence_from_pdb(file_path: str) -> Optional[str]:
     """
-    提取PDB文件的序列，处理异常并返回标准化结果。
-    
+    Extract the amino-acid sequence of a PDB file and return a FASTA record.
+
+    Exceptions are caught so that failure of one file does not interrupt the batch.
+
     Args:
-        file_path: PDB文件路径
-        
+        file_path: Path to the PDB file.
+
     Returns:
-        格式化为FASTA格式的字符串，失败时返回None
+        A FASTA-formatted string, or None when extraction fails.
     """
     try:
         from readPDBSeq import get_sequence_from_pdb
@@ -24,26 +26,26 @@ def extract_sequence_from_pdb(file_path: str) -> Optional[str]:
         return f">{header}\n{sequence}"
         
     except ImportError:
-        print("错误：找不到readPDBSeq模块，请确保已正确安装", file=sys.stderr)
+        print("Error: the readPDBSeq module was not found. Confirm that it is installed and importable.", file=sys.stderr)
         return None
     except Exception as e:
-        print(f"处理文件 {file_path} 时出错: {e}", file=sys.stderr)
+        print(f"Error while processing {file_path}: {e}", file=sys.stderr)
         return None
 
 def main(db_path: str, output_file: str) -> None:
     """
-    主函数：处理PDB文件并生成FASTA序列文件
-    
+    Extract sequences from PDB files and write a FASTA file.
+
     Args:
-        db_path: 输入路径（支持通配符或目录）
-        output_file: 输出FASTA文件路径
+        db_path: Input path. A directory or a glob pattern is accepted.
+        output_file: Path of the output FASTA file.
     """
-    # 验证输入路径
+    # Validate the input path.
     if not os.path.exists(db_path):
-        print(f"输入路径不存在: {db_path}", file=sys.stderr)
+        print(f"Input path does not exist: {db_path}", file=sys.stderr)
         return
 
-    # 构建文件列表
+    # Assemble the list of PDB files.
     if os.path.isdir(db_path):
         pattern = os.path.join(db_path, "*.pdb")
     else:
@@ -51,32 +53,32 @@ def main(db_path: str, output_file: str) -> None:
         
     pdb_files = glob.glob(pattern)
     if not pdb_files:
-        print(f"未找到匹配的PDB文件: {pattern}", file=sys.stderr)
+        print(f"No PDB files matched the pattern: {pattern}", file=sys.stderr)
         return
 
-    # 处理文件并写入结果
+    # Extract sequences and write the FASTA output.
     try:
         with open(output_file, 'w') as f_out:
             for file in pdb_files:
                 fasta_entry = extract_sequence_from_pdb(file)
                 if fasta_entry:
                     f_out.write(fasta_entry + '\n')
-        print(f"成功处理 {len(pdb_files)} 个文件，输出保存至 {output_file}")
+        print(f"Processed {len(pdb_files)} files. Output written to {output_file}.")
                     
     except IOError as e:
-        print(f"写入输出文件失败: {e}", file=sys.stderr)
+        print(f"Failed to write the output file: {e}", file=sys.stderr)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="从PDB文件提取蛋白质序列并生成FASTA格式文件",
+        description="Extract protein sequences from PDB files and write a FASTA file.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument("db_path", help="PDB文件路径（支持通配符）或包含PDB的目录")
-    parser.add_argument("output_file", help="输出FASTA文件的路径")
+    parser.add_argument("db_path", help="PDB path, glob pattern, or directory containing PDB files.")
+    parser.add_argument("output_file", help="Path of the output FASTA file.")
     
     args = parser.parse_args()
     
-    # 添加readPDBSeq模块路径到系统路径（如需要）
+    # Add the readPDBSeq module directory to the module search path when required.
     # sys.path.append('/path/to/readPDBSeq')
     
     main(args.db_path, args.output_file)

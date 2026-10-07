@@ -10,28 +10,28 @@ from sklearn.linear_model import LinearRegression
 
 
 def residuals(y, X):
-    """对 y ~ X 做线性回归，返回 y 的残差"""
+    """Fit the ordinary linear model y ~ X and return the residuals of y."""
     model = LinearRegression().fit(X, y)
     return y - model.predict(X)
 
 def plot_generations(connector_df, output_path):
-    # 准备数据
+    # Extract the variables used for the association plot.
     x = connector_df['cRMSD']
     y = connector_df['pTM']
 
-    # 计算 Spearman r、p-value 和 R²
+    # Compute the Spearman rank correlation, its two-sided p-value, and the corresponding coefficient of determination.
     r, p_val = spearmanr(x, y)
     r2 = r**2
 
     sns.set(style="white")
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    # 散点
+    # Observed cRMSD–pTM pairs.
     sns.scatterplot(x=x, y=y, s=50, alpha=0.7, ax=ax)
-    # 回归线
+    # Ordinary least-squares regression line with a 95% confidence band.
     sns.regplot(x=x, y=y, scatter=False, ci=95,
                 line_kws={'color': 'red', 'lw': 1.5}, ax=ax)
-    # 虚线
+    # Reference thresholds for predicted TM-score and connector RMSD.
     ax.axhline(0.8, color='blue', linestyle='--', lw=1, label='pTM = 0.8')
     ax.axvline(1.5, color='green', linestyle='--', lw=1, label='cRMSD = 1.5')
 
@@ -113,8 +113,10 @@ def split_dataframe(
     file_column: str | None = None
 ) -> dict[str, pd.DataFrame]:
     """
-    拆分 df，每个子表至少保留 id_column，
-    如果 file_column 被指定且存在，则也保留它。
+    Partition a table into column groups that share a prefix or a suffix.
+
+    Each subset retains ``id_column``. When ``file_column`` is supplied and
+    is present in the table, that column is retained as well.
     """
     splits = {}
     base_cols = [id_column]
@@ -143,7 +145,10 @@ def split_output_df(
     file_column: str | None = 'Filename'
 ):
     """
-    和原来几乎一样，只要 file_column=None 就不会去找 Filename。
+    Write prefix-partitioned distance tables, optionally retaining a file column.
+
+    When ``file_column`` is ``None``, the source-filename column is omitted.
+    This is appropriate after aggregation removes per-structure identity.
     """
     stage_dict = split_dataframe(
         embe_df,
@@ -152,7 +157,7 @@ def split_output_df(
         file_column=file_column
     )
     for stage_type, stage_df in stage_dict.items():
-        # 排序并去重
+        # Sort by the stage-specific Euclidean distance and remove duplicate entries.
         col_name = f"{stage_type}_euclidean_all_{embe_type}"
         if col_name in stage_df.columns:
             stage_df = stage_df.sort_values(by=col_name, ascending=True)
@@ -184,7 +189,7 @@ def extract_distance(target_list_path, generation_folder, stage_list=None, regio
 
     if not all_results:
         print("[ERROR] No valid generation data found. Exit.")
-        sys.exit(1)
+        raise RuntimeError("No valid generation data found for extract_distance.")
 
     df_gen = pd.concat(all_results, ignore_index=True)
     print(f"Passed files: {success}\t Failed files: {fail}")
@@ -240,7 +245,7 @@ def extract_distance(target_list_path, generation_folder, stage_list=None, regio
         embe_best_df = (
             embe_df
             .groupby('PDB_ID', as_index=False)[cols_to_avge]
-            .min() #  对指定列计算最小值
+            .min()  # Minimum of each specified column within a PDB_ID group.
         )
         split_output_df(embe_best_df, embe_type, prefixes=['change', 'original', 'grafted'], output_path=full_best_output, file_column=None)
 

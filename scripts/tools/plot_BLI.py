@@ -59,6 +59,7 @@ def main():
     parser = argparse.ArgumentParser(description="Plot BLI result")
     parser.add_argument("--input", required=True, help="Input file or folder")
     parser.add_argument("--output", required=True, help="Output folder")
+    parser.add_argument("--font_size", default=20, type=int, help="Font size for plots")
     args = parser.parse_args()
     
     input_root_folder = args.input   
@@ -68,9 +69,23 @@ def main():
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
+    # Publication font sizes. Seaborn's set_theme() overwrites rcParams, so
+    # apply sizes after the theme, then set each artist explicitly as well.
+    FONTSIZE = args.font_size
+    FONTWEIGHT = "bold"
+
     # Set Seaborn theme for SCI style
     # 'muted' palette provides low saturation colors suitable for publication
-    sns.set_theme(style="ticks", palette="muted") 
+    sns.set_theme(style="ticks", palette="muted")
+    plt.rcParams.update({
+        "font.size": FONTSIZE,
+        "axes.labelsize": FONTSIZE,
+        "axes.labelweight": FONTWEIGHT,
+        "xtick.labelsize": FONTSIZE,
+        "ytick.labelsize": FONTSIZE,
+        "legend.fontsize": FONTSIZE,
+        "legend.frameon": False,
+    }) 
     
     # Get all subdirectories in the input folder
     subdirs = [d for d in glob.glob(os.path.join(input_root_folder, '*')) if os.path.isdir(d)]
@@ -125,8 +140,9 @@ def main():
         )
 
         # Rename Axes
-        ax.set_xlabel("Time (s)", fontsize=12, fontweight='bold')
-        ax.set_ylabel("Response (nm)", fontsize=12, fontweight='bold')
+        ax.set_xlabel("Time (s)", fontsize=FONTSIZE, fontweight=FONTWEIGHT)
+        ax.set_ylabel("Response (nm)", fontsize=FONTSIZE, fontweight=FONTWEIGHT)
+        ax.tick_params(axis="both", labelsize=FONTSIZE)
 
         # Customize X-axis ticks (Every 200 units)
         ax.xaxis.set_major_locator(ticker.MultipleLocator(200))
@@ -138,13 +154,16 @@ def main():
         # bbox_to_anchor=(1.02, 1): Places the anchor point just outside the axes at the top-right.
         # loc='upper left': Aligns the top-left corner of the legend box to that anchor point.
         # This ensures the legend is on the right side, top aligned, without covering data.
-        plt.legend(
-            title=None, 
-            frameon=False, 
-            bbox_to_anchor=(1.02, 1), 
-            loc='upper left', 
-            borderaxespad=0
+        # Legend does not accept fontweight=; use prop (FontProperties) for size + weight.
+        legend = ax.legend(
+            title=None,
+            frameon=False,
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left",
+            borderaxespad=0,
+            prop={"size": FONTSIZE, "weight": FONTWEIGHT},
         )
+        legend.set_title(None)
 
         # Save plot
         output_filename = f"{subdir_name}.tif"

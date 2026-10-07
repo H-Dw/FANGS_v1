@@ -27,11 +27,10 @@ def find_cdr_start(pep_chain, cdr):
     start = None
     end = None
     # print(f'Find CDR {cdr}')
-    # 检查cdr是否在full_seq中
     if cdr == None or cdr not in full_seq:
         print(f"WARNNING: CDR sequence '{cdr}' not found!")
         return start, end
-    # 如果cdr存在，找到它的起始位置
+
     start = full_seq.index(cdr)
     end = start + len(cdr)   # +1
     return start, end
@@ -402,7 +401,7 @@ def main(pdb_path, cdr_info_path, output_path, structure_sample, sample_to_store
         target_pep = f'{row["PDBChain"]}.pdb'
         target_chain = target_pep[4:]   # PDBID + ChainID
         target_pep = os.path.join(pdb_path, target_pep)
-        target_cdrs = [row['CDR3'], row['CDR2'], row['CDR1']]  # 创建一个列表
+        target_cdrs = [row['CDR3'], row['CDR2'], row['CDR1']]
         target_cdrs = [cdr for cdr in target_cdrs if pd.notna(cdr)]
         target_info_list.append((target_pep, target_chain, target_cdrs))
 

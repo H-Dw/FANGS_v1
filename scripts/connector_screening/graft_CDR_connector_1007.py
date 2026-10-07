@@ -32,7 +32,7 @@ def set_cpu(cpu_num):
     torch.set_num_threads(cpu_num)
 
 def input_selection(Nb_pdb_path, Nb_CDR_file, similarity_path, FR_pdb_folder, cdr_db_file, select_mode, select_distance, top_n, generation_path, generation_input_file, dupl_pdb=True):
-    # 转换为template_based_generation的输入格式
+    # Convert the selected records to the input schema required by template-based generation.
     # top_n = top_n + 1  # Contain template itself, but will be removed in generation
     all_transformat_df = None
 
@@ -140,7 +140,7 @@ def sele_generation(generation_folder, select_n):
     if generation_df.shape[0] < select_n or select_n == 0:
         select_n = generation_df.shape[0]
 
-    selected_data = generation_df.iloc[:int(select_n)]  # 行索引0到4（前5行）
+    selected_data = generation_df.iloc[:int(select_n)]  # Leading rows by position (indices 0-4 when five designs are retained).
 
     return selected_data
 

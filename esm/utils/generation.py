@@ -203,3 +203,204 @@ def iterative_sampling_tokens(
             )
 
     return sampled_tokens
+
+
+def _repeat_track(tensor: torch.Tensor | None, n: int) -> torch.Tensor | None:
+    if tensor is None:
+        return None
+    return tensor.unsqueeze(0).expand(n, *tensor.shape).contiguous()
+
+
+def repeat_protein_tensor(protein: ESMProteinTensor, n: int) -> ESMProteinTensor:
+    """Tile an unbatched ESMProteinTensor along a new batch dimension."""
+    if n < 1:
+        raise ValueError(f"n must be >= 1, got {n}")
+    return ESMProteinTensor(
+        **{
+            field.name: _repeat_track(getattr(protein, field.name), n)
+            for field in attr.fields(ESMProteinTensor)
+        }
+    )
+
+
+def unbatch_protein_tensor(protein: ESMProteinTensor) -> list[ESMProteinTensor]:
+    """Split a batched ESMProteinTensor into a list of unbatched tensors."""
+    batch_size = None
+    for field in attr.fields(ESMProteinTensor):
+        tensor = getattr(protein, field.name)
+        if tensor is not None and tensor.dim() > 0:
+            batch_size = tensor.size(0)
+            break
+    if batch_size is None:
+        raise ValueError("Cannot unbatch an empty ESMProteinTensor")
+
+    outputs = []
+    for i in range(batch_size):
+        outputs.append(
+            ESMProteinTensor(
+                **{
+                    field.name: (
+                        None
+                        if getattr(protein, field.name) is None
+                        else getattr(protein, field.name)[i]
+                    )
+                    for field in attr.fields(ESMProteinTensor)
+                }
+            )
+        )
+    return outputs
+
+
+def _batched_seq_len(input_tokens: ESMProteinTensor) -> tuple[int, int]:
+    for field in attr.fields(ESMProteinTensor):
+        tensor = getattr(input_tokens, field.name)
+        if tensor is None or tensor.dim() == 0:
+            continue
+        if tensor.dim() == 1:
+            return 1, tensor.size(0)
+        return tensor.size(0), tensor.size(1)
+    raise ValueError("Cannot infer batch size and length from ESMProteinTensor")
+
+
+def iterative_sampling_tokens_batched(
+    client: ESM3InferenceClient,
+    input_tokens: ESMProteinTensor,
+    config: GenerationConfig,
+    tokenizers: TokenizerCollectionProtocol,
+    real_probs: torch.Tensor,
+    alpha: float,
+) -> ESMProteinTensor:
+    """Iterative decoding for a batched ESMProteinTensor of shape (B, L)."""
+    track_to_sample = config.track
+    all_tracks = [
+        f.name for f in attr.fields(SamplingConfig) if "embedding" not in f.name
+    ]
+
+    batch_size, sequence_length = _batched_seq_len(input_tokens)
+    device = input_tokens.device
+
+    decoding_schedule = NOISE_SCHEDULE_REGISTRY[config.schedule]
+    sampled_tokens = attr.evolve(input_tokens)
+
+    if config.condition_on_coordinates_only and input_tokens.coordinates is not None:
+        sampled_tokens.structure = None
+
+    sampling_mask = torch.ones(
+        batch_size,
+        sequence_length,
+        dtype=torch.bool,
+        device=device,
+    )
+    sampling_mask[:, 0] = False
+    sampling_mask[:, -1] = False
+
+    get_tokenizer: Callable[[str], EsmTokenizerBase] = lambda s: getattr(tokenizers, s)
+    if getattr(sampled_tokens, track_to_sample) is None:
+        if track_to_sample == "function":
+            dims = (batch_size, sequence_length, tokenizers.function.depth)
+        elif track_to_sample == "residue_annotations":
+            dims = (batch_size, sequence_length, C.MAX_RESIDUE_ANNOTATIONS)
+        else:
+            dims = (batch_size, sequence_length)
+        masked_tokens = torch.full(
+            dims,
+            get_tokenizer(track_to_sample).mask_token_id,
+            dtype=torch.long,
+            device=device,
+        )
+        if track_to_sample == "sequence":
+            masked_tokens[:, 0] = tokenizers.sequence.cls_token_id  # type: ignore
+            masked_tokens[:, -1] = tokenizers.sequence.eos_token_id  # type: ignore
+        else:
+            masked_tokens[:, 0] = get_tokenizer(track_to_sample).bos_token_id
+            masked_tokens[:, -1] = get_tokenizer(track_to_sample).eos_token_id
+
+        setattr(sampled_tokens, track_to_sample, masked_tokens)
+    else:
+        is_mask: torch.Tensor = (
+            getattr(input_tokens, track_to_sample)
+            == get_tokenizer(track_to_sample).mask_token_id
+        )
+        if not is_mask.any().item():
+            raise ValueError(f"Cannot sample {config.track} when input has no masks.")
+        sampling_mask = sampling_mask & is_mask
+
+    def maybe_clone(x: torch.Tensor | None) -> torch.Tensor | None:
+        return x.clone() if x is not None else None
+
+    L = sequence_length - 2
+    positions_sampled = 0
+    for t in tqdm(range(config.num_steps)):
+        track_sample_config = SamplingTrackConfig()
+        track_sample_config.invalid_ids = config.invalid_ids
+        track_sample_config.temperature = config.temperature
+        track_sample_config.top_p = config.top_p
+        sampling_config = SamplingConfig(**{track_to_sample: track_sample_config})  # type: ignore
+
+        forward_and_sample_output = client.forward_and_sample(
+            sampled_tokens, sampling_config, real_probs, alpha
+        )
+        new_samples = forward_and_sample_output.protein_tensor
+
+        perc_masked = decoding_schedule(torch.tensor((t + 1) / config.num_steps))
+        num_to_sample = int((1 - perc_masked) * L) - positions_sampled
+        positions_sampled += num_to_sample
+
+        if track_to_sample in ["function", "residue_annotations"]:
+            sampled_tokens.function = maybe_clone(input_tokens.function)
+            sampled_tokens.residue_annotations = maybe_clone(
+                input_tokens.residue_annotations
+            )
+            raise NotImplementedError(
+                f"Iterative decoding for {track_to_sample} is not supported yet."
+            )
+
+        sampling_mask = sampling_mask & (
+            getattr(sampled_tokens, track_to_sample)
+            == get_tokenizer(track_to_sample).mask_token_id
+        )
+
+        track_entropy: torch.Tensor = getattr(
+            forward_and_sample_output.entropy, track_to_sample
+        )
+        if track_entropy.dim() == 1:
+            track_entropy = track_entropy.unsqueeze(0)
+        track_entropy = track_entropy.masked_fill(
+            ~sampling_mask, torch.finfo(track_entropy.dtype).max
+        )
+
+        is_top_k = torch.zeros(
+            batch_size, sequence_length, dtype=torch.bool, device=device
+        )
+        if num_to_sample > 0:
+            k = min(num_to_sample, sequence_length)
+            _, indices = track_entropy.topk(k, dim=-1, largest=False)
+            is_top_k.scatter_(1, indices, True)
+
+        tokens_to_sample = sampling_mask & is_top_k
+
+        old_track_samples = getattr(sampled_tokens, track_to_sample)
+        new_track_samples = getattr(new_samples, track_to_sample)
+        if new_track_samples.dim() == 1:
+            new_track_samples = new_track_samples.unsqueeze(0).expand(
+                batch_size, -1
+            )
+        if old_track_samples.dim() == 1:
+            old_track_samples = old_track_samples.unsqueeze(0).expand(
+                batch_size, -1
+            )
+
+        new_track_samples = torch.where(
+            tokens_to_sample, new_track_samples, old_track_samples
+        )
+        setattr(sampled_tokens, track_to_sample, new_track_samples)
+
+    for track in all_tracks:
+        if track != track_to_sample:
+            setattr(
+                sampled_tokens,
+                track,
+                maybe_clone(getattr(input_tokens, track)),
+            )
+
+    return sampled_tokens

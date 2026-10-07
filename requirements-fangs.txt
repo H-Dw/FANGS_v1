@@ -1,0 +1,38 @@
+# FANGS Python dependencies for Python 3.10.14 on Linux x86_64.
+# ANARCI, HMMER, and MAFFT are supplied by environment.fangs.yml.
+# Use the repository-local esm/ implementation through PYTHONPATH.
+--extra-index-url https://download.pytorch.org/whl/cu118
+
+# Scientific analysis and structural file processing.
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.15.2
+matplotlib==3.10.0
+biopython==1.84
+gemmi==0.7.5
+scikit-learn==1.6.1
+seaborn==0.13.2
+
+# ESM3 dependencies and the explicitly selected CUDA 11.8 PyTorch wheels.
+esm==3.1.2
+torch==2.2.0+cu118
+torchvision==0.17.0+cu118
+torchtext==0.17.0
+torchdata==0.7.1
+torchaudio==2.2.0+cu118
+biotite==0.41.2
+transformers==4.46.3
+tokenizers==0.20.3
+huggingface-hub==0.27.1
+cloudpathlib==0.20.0
+tenacity==9.0.0
+zstd==1.5.6.1
+ipython==8.26.0
+einops==0.8.0
+safetensors==0.4.3
+msgpack-numpy==0.4.8
+brotli==1.1.0
+attrs==23.2.0
+packaging==24.2
+tqdm==4.67.1
+requests==2.32.3

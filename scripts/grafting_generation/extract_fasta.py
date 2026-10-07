@@ -2,7 +2,7 @@ import csv, argparse
 from collections import OrderedDict
 
 def tsv_to_fasta(tsv_file, fasta_pdb_output, fasta_filename_output, prefix=""):
-    pdb_sequences = OrderedDict()  # 用于去重
+    pdb_sequences = OrderedDict()  # Preserve insertion order while collapsing duplicate PDB identifiers.
     filename_sequences = []
 
     with open(tsv_file, 'r', encoding='utf-8') as f:
@@ -12,18 +12,18 @@ def tsv_to_fasta(tsv_file, fasta_pdb_output, fasta_filename_output, prefix=""):
             sequence = row['Sequence']
             filename = row['Filename']
 
-            # 根据PDB_ID去重
+            # Retain the first sequence observed for each PDB_ID.
             if pdb_id not in pdb_sequences:
                 pdb_sequences[pdb_id] = sequence
 
             filename_sequences.append((filename, sequence))
 
-    # 写入以PDB_ID为标题的fasta
+    # Write a FASTA file whose headers are PDB identifiers.
     with open(fasta_pdb_output, 'w') as f:
         for pdb_id, seq in pdb_sequences.items():
             f.write(f">{prefix}{pdb_id}\n{seq}\n")
 
-    # 写入以Filename为标题的fasta
+    # Write a FASTA file whose headers are source filenames.
     with open(fasta_filename_output, 'w') as f:
         for filename, seq in filename_sequences:
             f.write(f">{prefix}{filename}\n{seq}\n")
