@@ -13,7 +13,10 @@ OUTPUT_DIR="${AF3_OBSERVED_OUTPUT_DIR:-$BASE/af3_template/af3_observed_predictio
   exit 1
 }
 
-AF3_HOME="${AF3_HOME:-/data1/dhuang/af3}"
+if [[ -z "${AF3_ROOT:-}" && -z "${AF3_HOME:-}" ]]; then
+  echo "Set AF3_HOME to the directory that contains the alphafold3 checkout, or set AF3_ROOT to that checkout." >&2
+  exit 2
+fi
 MODEL_DIR="${AF3_MODEL_DIR:-${AF3_ROOT:-$AF3_HOME/alphafold3}/checkpoints}"
 
 exec bash "$SCRIPT_DIR/run_af3_4gpu.sh" \

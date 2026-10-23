@@ -23,6 +23,11 @@ from extract_generation import extract_distance
 
 from define_random import set_global_seed, init_seed
 
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+from scripts.tools.external_paths import resolve_directory, resolve_tool_prefix
+
 def set_cpu(cpu_num):
     os.environ ['OMP_NUM_THREADS'] = str(cpu_num)
     os.environ ['OPENBLAS_NUM_THREADS'] = str(cpu_num)
@@ -233,7 +238,7 @@ def main(
     non_generation, select_mode, s_type, top_n, len_limit, 
     seqs_file=None, tokenized_folder=None, 
     global_search=True, alignment=False, dupl_pdb=True, s_temperature=0.7,
-    distance_limit=10.0, seed=None):
+    distance_limit=10.0, seed=None, foldseek_bin=None, pippack_bin=None, pippack_home=None):
 
     start_time = time.time()
 
@@ -256,11 +261,6 @@ def main(
 
     os.environ['MKL_THREADING_LAYER'] = 'GNU'   # For PIPPack
 
-    # Check path !!!
-    foldseek_env = "/data1/dhuang/miniconda3/envs/foldseek/bin/"
-    pippack_env = "/data1/dhuang/miniconda3/envs/pippack/bin/"
-    pippack_path = "/data1/dhuang/PIPPack/"
-
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
@@ -271,6 +271,11 @@ def main(
 
     # Run Foldseek and MMSeqs2
     if global_search:
+        try:
+            foldseek_env = resolve_tool_prefix(foldseek_bin, "FOLDSEEK_BIN", ("foldseek", "mmseqs"))
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}")
+            sys.exit(1)
         extract = True if alignment else False
         structure_similarity_result = similarity_search.main(foldseek_env, Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, similarity_path, prefix="foldseek", cpu_num=cpu_num, gpu_id=gpu, extract=extract)
         print(structure_similarity_result)
@@ -406,6 +411,12 @@ def main(
         select_n = top_n
         selected_data = sele_generation(generation_folder, select_n)
 
+        try:
+            pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
+            pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}")
+            sys.exit(1)
         # Generated side-chain of each selected generations
         generation_path = os.path.join(generation_folder, 'pdb/')
         side_chain(generation_path, selected_data, ag_pdb_path, output_path, pippack_env, pippack_path, code_path, device)
@@ -462,6 +473,9 @@ if __name__ == "__main__":
         action="store_true", 
         help="Duplicate PDB file before generated structure based on four char at head."
     )
+    parser.add_argument("--foldseek-bin", default=None, help="Directory containing foldseek and mmseqs. Overrides FOLDSEEK_BIN.")
+    parser.add_argument("--pippack-bin", default=None, help="Directory containing the PIPPack Python executable. Overrides PIPPACK_BIN.")
+    parser.add_argument("--pippack-home", default=None, help="PIPPack source directory. Overrides PIPPACK_HOME.")
 
     args = parser.parse_args()
 
@@ -497,6 +511,9 @@ if __name__ == "__main__":
         args.dupl_pdb,
         args.temperature,
         args.distance_limit,
-        args.seed
+        args.seed,
+        args.foldseek_bin,
+        args.pippack_bin,
+        args.pippack_home,
         )
     print(output)

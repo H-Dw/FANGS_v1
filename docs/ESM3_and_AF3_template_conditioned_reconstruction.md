@@ -124,7 +124,7 @@ Each AlphaFold 3 JSON input uses dialect version 4 and specifies one observed-ch
 
 ### 4.3. Inference commands and outputs
 
-The observed-cohort entry point activates AF3 and uses the server's installed runtime and checkpoints. `AF3_HOME`, `AF3_CONDA_ENV`, and `AF3_MODEL_DIR` can override these defaults. Validate the launcher without running predictions:
+The observed-cohort entry point activates AF3 and uses the installed runtime and checkpoints. Set `AF3_HOME` to the directory that contains the `alphafold3` checkout, or set `AF3_ROOT` to that checkout. `AF3_CONDA_ENV` selects the environment name (`alphafold3` by default), and `AF3_MODEL_DIR` selects the weight directory. Validate the launcher without running predictions:
 
 ```bash
 bash "scripts/conditional_generation/run_af3_observed_4gpu.sh" --dry_run

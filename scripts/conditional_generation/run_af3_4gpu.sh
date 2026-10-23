@@ -3,8 +3,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
-AF3_HOME="${AF3_HOME:-/data1/dhuang/af3}"
-AF3_REPO="${AF3_ROOT:-$AF3_HOME/alphafold3}"
 CONFIG_ROOT=""
 MODEL_DIR=""
 OUTPUT_DIR=""
@@ -37,6 +35,8 @@ Options:
 
 The generated JSON explicitly disables paired/unpaired MSA. This launcher also
 sets --run_data_pipeline=false, so genetic databases and MSA files are not read.
+Set AF3_HOME to the directory that contains the alphafold3 checkout, or set AF3_ROOT
+to that checkout, before running a job.
 EOF
 }
 
@@ -55,6 +55,12 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ -z "${AF3_ROOT:-}" && -z "${AF3_HOME:-}" ]]; then
+  echo "Set AF3_HOME to the directory that contains the alphafold3 checkout, or set AF3_ROOT to that checkout." >&2
+  exit 2
+fi
+AF3_REPO="${AF3_ROOT:-$AF3_HOME/alphafold3}"
 
 [[ -n "$CONFIG_ROOT" && -n "$MODEL_DIR" && -n "$OUTPUT_DIR" ]] || { usage >&2; exit 2; }
 [[ -d "$CONFIG_ROOT/shards" ]] || { echo "Missing $CONFIG_ROOT/shards" >&2; exit 2; }

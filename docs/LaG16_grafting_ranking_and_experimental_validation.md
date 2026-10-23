@@ -4,7 +4,7 @@ This document records the data sources, execution commands, and output locations
 
 All paths are relative to the repository root. Execute commands from that root in the `fangs` Conda environment. MAFFT is installed with `environment.fangs.yml` and is available on the executable search path after activation. Protenix requires a separate installation with the appropriate model parameters. Regenerating MSAs additionally requires user-installed ColabFold and MMseqs2, together with the UniRef30 and ColabFold environmental databases.
 
-The experimental identifiers are parental LaG16 (`6lr7B`) and grafts on `7nowA`, `4dkaB`, `8taoC`, `3k1kC`, and `1zmyA`. The selected-sequence and Protenix records use `4dkaA` for the construct identified as `4dkaB` in the measurement tables.
+The experimental identifiers are parental LaG16 (`6lr7B`) and grafts on `7nowA`, `4dkaB`, `8taoC`, `3k1kC`, and `1zmyA`.
 
 All derived tables, figures, and newly generated workflow outputs are assigned to `data/6lr7B_grafting_connector_all_temp07_s50_250904/analysis/`.
 
@@ -99,7 +99,7 @@ The source FASTA is `data/6lr7B_grafting_connector_all_temp07_s50_250904/selecte
 | Experimental carrier | Coordinate file in `selected_candidates/` |
 |---|---|
 | `7nowA` | `7nowA_generated_70840.pdb` |
-| `4dkaB` | `4dkaA_generated_47772.pdb` |
+| `4dkaB` | `4dkaB_generated_22638.pdb` |
 | `8taoC` | `8taoC_generated_27577.pdb` |
 | `3k1kC` | `3k1kC_generated_101418.pdb` |
 | `1zmyA` | `1zmyA_generated_27257.pdb` |
@@ -213,7 +213,7 @@ To read regenerated runs, set `--base-path "$OUT/sampling_depth/generation"`.
 
 ### Data sources
 
-The source directory is `data/selected_candidates_lag16/`. The six target identifiers are `6lr7B`, `6lr7B_7nowA`, `6lr7B_4dkaA`, `6lr7B_8taoC`, `6lr7B_3k1kC`, and `6lr7B_1zmyA`.
+The source directory is `data/selected_candidates_lag16/`. The six target identifiers are `6lr7B`, `6lr7B_7nowA`, `6lr7B_4dkaB`, `6lr7B_8taoC`, `6lr7B_3k1kC`, and `6lr7B_1zmyA`.
 
 | Path relative to the source directory | Data content |
 |---|---|

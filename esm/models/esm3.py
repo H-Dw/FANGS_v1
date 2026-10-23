@@ -239,13 +239,18 @@ class ESM3(nn.Module, ESM3InferenceClient):
         cls,
         model_name: str = ESM3_OPEN_SMALL,
         device: torch.device | str = "cpu",
+        checkpoint: str | None = None,
     ) -> ESM3:
-        from esm.pretrained import load_local_model
+        from esm.pretrained import load_local_model, set_checkpoint
 
         # custom
         # if model_name not in [ESM3_OPEN_SMALL]:
         #     raise ValueError(f"Model name {model_name} is not a valid ESM3 model name.")
-        model: ESM3 = load_local_model(model_name, device=device)  # type: ignore
+        if checkpoint is not None:
+            set_checkpoint(checkpoint)
+        model: ESM3 = load_local_model(model_name, device=device, checkpoint=checkpoint)  # type: ignore
+        if getattr(model, "checkpoint", None) is None:
+            model.checkpoint = checkpoint
         return model
 
     def get_structure_token_encoder(self) -> StructureTokenEncoder:
@@ -267,7 +272,11 @@ class ESM3(nn.Module, ESM3InferenceClient):
         # Lazy import from pretrained
         from esm.pretrained import load_local_model
 
-        return load_local_model(model_name, device=next(self.parameters()).device)
+        return load_local_model(
+            model_name,
+            device=next(self.parameters()).device,
+            checkpoint=getattr(self, "checkpoint", None),
+        )
 
     def forward(
         self,

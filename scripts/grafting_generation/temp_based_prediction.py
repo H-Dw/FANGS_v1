@@ -425,7 +425,7 @@ def output_designs(designs, filename, path):
             pdb_filename = os.path.join(pdb_path, f"{fr_path}_generated_{i}.pdb")
             designs[i][2].to_pdb(pdb_filename)
 
-def main(graft_info_path, output_path, structure_sample, sample_to_store, sequence_sample, linker_len, linker_design, device, cpu_num, ag, len_limit, model=None, model_lock=None, s_temperature=0.7, output_stream=None, structure_batch_size=1, bf16=False):
+def main(graft_info_path, output_path, structure_sample, sample_to_store, sequence_sample, linker_len, linker_design, device, cpu_num, ag, len_limit, model=None, model_lock=None, s_temperature=0.7, output_stream=None, structure_batch_size=1, bf16=False, checkpoint=None):
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
     # cpu_num = 16
     set_cpu(cpu_num)
@@ -434,7 +434,7 @@ def main(graft_info_path, output_path, structure_sample, sample_to_store, sequen
     output_stream = output_stream or sys.stdout
     owns_model = model is None
     if model is None:
-        model = ESM3.from_pretrained("esm3_sm_open_v1").to(device)
+        model = ESM3.from_pretrained("esm3_sm_open_v1", checkpoint=checkpoint).to(device)
     # Only cast a self-owned model: a shared model may already have fp32
     # structure encoder/decoder registered as submodules, and re-casting
     # would silently convert them to bf16.

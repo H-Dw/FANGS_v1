@@ -16,6 +16,11 @@ from tokenizer_INDI import main as tokenizer
 from tokenizer_grafting import main as tokenizer_grafted
 from calc_embed_distance_connector import main as calc_distance
 
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+from scripts.tools.external_paths import resolve_directory, resolve_tool_prefix
+
 def set_cpu(cpu_num):
     os.environ ['OMP_NUM_THREADS'] = str(cpu_num)
     os.environ ['OPENBLAS_NUM_THREADS'] = str(cpu_num)
@@ -172,7 +177,7 @@ def convert(cdr_tsv, generation_path, output_path=None):
     # Write output
     out_df.to_csv(output_path, sep='\t', index=False)
 
-def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_pdb_path, structure_sample, gpu, cpu_num, non_generation, select_mode, type, top_n, len_limit, seqs_file=None, tokenized_folder=None, global_search=True, alignment=False):
+def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_pdb_path, structure_sample, gpu, cpu_num, non_generation, select_mode, type, top_n, len_limit, seqs_file=None, tokenized_folder=None, global_search=True, alignment=False, foldseek_bin=None, pippack_bin=None, pippack_home=None):
     start_time = time.time()
 
     print(f'Process: {Nb_pdb_path}. NOTE: The first row in the {Nb_CDR_file} was selected as target.')
@@ -188,11 +193,6 @@ def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_p
 
     os.environ['MKL_THREADING_LAYER'] = 'GNU'   # For PIPPack
 
-    # Check path !!!
-    foldseek_env = "/data1/dhuang/miniconda3/envs/foldseek/bin/"
-    pippack_env = "/data1/dhuang/miniconda3/envs/pippack/bin/"
-    pippack_path = "/data1/dhuang/PIPPack/"
-
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
@@ -203,6 +203,11 @@ def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_p
 
     # Run Foldseek and MMSeqs2
     if global_search:
+        try:
+            foldseek_env = resolve_tool_prefix(foldseek_bin, "FOLDSEEK_BIN", ("foldseek", "mmseqs"))
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}")
+            sys.exit(1)
         extract = True if alignment else False
         structure_similarity_result = similarity_search.main(foldseek_env, Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, similarity_path, prefix="foldseek", cpu_num=cpu_num, gpu_id=gpu, extract=extract)
         print(structure_similarity_result)
@@ -277,6 +282,12 @@ def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_p
         select_n = 10
         selected_data = sele_generation(passed_generation_folder, select_n)
 
+        try:
+            pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
+            pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}")
+            sys.exit(1)
         # Generated side-chain of each selected generations
         passed_generation_path = os.path.join(passed_generation_folder, 'pdb/')
         side_chain(passed_generation_path, selected_data, ag_pdb_path, output_path, pippack_env, pippack_path, code_path, device)
@@ -342,6 +353,9 @@ if __name__ == "__main__":
         action="store_true", 
         help="Using alignment method"
     )
+    parser.add_argument("--foldseek-bin", default=None, help="Directory containing foldseek and mmseqs. Overrides FOLDSEEK_BIN.")
+    parser.add_argument("--pippack-bin", default=None, help="Directory containing the PIPPack Python executable. Overrides PIPPACK_BIN.")
+    parser.add_argument("--pippack-home", default=None, help="PIPPack source directory. Overrides PIPPACK_HOME.")
 
     args = parser.parse_args()
 
@@ -373,6 +387,9 @@ if __name__ == "__main__":
         args.seqs_file, 
         args.tokenized_folder, 
         args.global_search,
-        args.alignment
+        args.alignment,
+        args.foldseek_bin,
+        args.pippack_bin,
+        args.pippack_home,
         )
     print(output)

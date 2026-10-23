@@ -1,3 +1,6 @@
+import os
+import sys
+import sysconfig
 from functools import cache
 from pathlib import Path
 
@@ -96,17 +99,52 @@ MAX_RESIDUE_ANNOTATIONS = 16
 TFIDF_VECTOR_SIZE = 58641
 
 
+# Present in every shipped ESM3 asset directory. A dangling symlink does not count.
+_DATA_MARKER = "entry_list_safety_29026.list"
+
+
+def _iter_data_dirs():
+    """ESM3 ``data`` directories, first match wins.
+
+    ``ESM3_DATA_ROOT`` is an explicit override and may be either the ``data``
+    directory or its parent. Otherwise the running interpreter's installed
+    package is used, so activating the conda env that holds the assets is
+    enough. No username, env name, or Python version is hardcoded.
+    """
+    if override := os.environ.get("ESM3_DATA_ROOT"):
+        root = Path(override).expanduser()
+        yield root / "data"
+        yield root
+
+    # This file is ``esm/utils/constants/esm3.py``.
+    yield Path(__file__).resolve().parents[2] / "data"
+
+    purelib = sysconfig.get_path("purelib")
+    if purelib:
+        yield Path(purelib) / "esm" / "data"
+
+    for entry in sys.path:
+        yield Path(entry or ".") / "esm" / "data"
+
+
 @staticmethod
 @cache
 def data_root():
-    # Try a few default directories
-    for path in [
-        "esm/data",
-        "esm/data",
-        "/data1/dhuang/miniconda3/envs/ESM3/lib/python3.10/site-packages/esm/data/",
-    ]:
-        if (p := Path(path)).exists():
-            return p.parent
+    # Callers join ``data/weights/...``, so the return value is the parent of ``data``.
+    seen: set[str] = set()
+    for path in _iter_data_dirs():
+        try:
+            key = os.path.normcase(str(path.resolve(strict=False)))
+        except OSError:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if (path / _DATA_MARKER).is_file():
+                return path.parent
+        except OSError:
+            continue
     # Try to download from hugginface if it doesn't exist
     path = Path(snapshot_download(repo_id="EvolutionaryScale/esm3-sm-open-v1"))
     return path

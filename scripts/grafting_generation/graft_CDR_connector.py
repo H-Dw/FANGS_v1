@@ -19,6 +19,7 @@ from scripts.grafting_generation.calc_embed_distance_connector import main as ca
 from scripts.grafting_generation.extract_generation import extract_distance
 
 from scripts.grafting_generation.define_random import set_global_seed, init_seed
+from scripts.tools.external_paths import resolve_directory, resolve_tool_prefix
 
 SIDE_CHAIN_MAX_DEFAULT = 10
 
@@ -156,7 +157,7 @@ def input_selection(Nb_pdb_path, Nb_CDR_file, similarity_path, FR_pdb_folder, cd
     all_transformat_df.to_csv(generation_input_file, sep='\t', index=False)
     print(f"Count of final inputs: {len(all_transformat_df)}")
 
-def grafting_generation(generation_input_file, temp_generation_path, output_path, device, cpu_num, ag_pdb_path, structure_sample, len_limit, s_temperature, model=None, model_lock=None, output_stream=None, structure_batch_size=1, bf16=False):
+def grafting_generation(generation_input_file, temp_generation_path, output_path, device, cpu_num, ag_pdb_path, structure_sample, len_limit, s_temperature, model=None, model_lock=None, output_stream=None, structure_batch_size=1, bf16=False, checkpoint=None):
     sample_to_store=10
     pytorch_version = torch.__version__
     if version.parse(pytorch_version) <= version.parse("2.0.0"):
@@ -185,6 +186,7 @@ def grafting_generation(generation_input_file, temp_generation_path, output_path
             output_stream=output_stream,
             structure_batch_size=structure_batch_size,
             bf16=bf16,
+            checkpoint=checkpoint,
         )
     except Exception as e:
         print(f"[ERROR] Fail to generate grafting: {e}", file=output_stream)
@@ -298,7 +300,8 @@ def main(
     global_search=True, alignment=False, dupl_pdb=True, s_temperature=0.7,
     distance_limit=10.0, seed=None,
     model=None, model_lock=None, gpu_managed=False, output_stream=None,
-    tmp_subdir=None, raise_on_error=False, side_chain_max=SIDE_CHAIN_MAX_DEFAULT, structure_batch_size=1, bf16=False):
+    tmp_subdir=None, raise_on_error=False, side_chain_max=SIDE_CHAIN_MAX_DEFAULT, structure_batch_size=1, bf16=False, checkpoint=None,
+    foldseek_bin=None, pippack_bin=None, pippack_home=None):
     # Record the pipeline start time for subsequent runtime reporting.
     start_time = time.time()
 
@@ -327,12 +330,14 @@ def main(
         search_gpu_id = gpu if device.type == 'cuda' else ""
     set_cpu(cpu_num)
 
-    os.environ['MKL_THREADING_LAYER'] = 'GNU'   # For PIPPack
+    if model is None and checkpoint:
+        from esm.models.esm3 import ESM3
+        print(f"Loading ESM3 from checkpoint {checkpoint} on {device}")
+        model = ESM3.from_pretrained(
+            "esm3_sm_open_v1", device=device, checkpoint=checkpoint
+        ).eval()
 
-    # Check path !!!
-    foldseek_env = "/data1/dhuang/miniconda3/envs/foldseek/bin/"
-    pippack_env = "/data1/dhuang/miniconda3/envs/pippack/bin/"
-    pippack_path = "/data1/dhuang/PIPPack/"
+    os.environ['MKL_THREADING_LAYER'] = 'GNU'   # For PIPPack
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
@@ -347,6 +352,10 @@ def main(
 
     # Run Foldseek and MMSeqs2
     if global_search:
+        try:
+            foldseek_env = resolve_tool_prefix(foldseek_bin, "FOLDSEEK_BIN", ("foldseek", "mmseqs"))
+        except FileNotFoundError as exc:
+            _fail(f"[ERROR] {exc}", raise_on_error)
         extract = True if alignment else False
         structure_similarity_result = similarity_search.main(
             foldseek_env, Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, similarity_path,
@@ -374,7 +383,8 @@ def main(
             tokenized_folder = os.path.join(output_path, 'tokenized_db/')
             tokenizer(
                 FR_CDR_file, FR_pdb_folder, tokenized_folder,
-                connector_len=2, model=model, model_lock=model_lock
+                connector_len=2, model=model, model_lock=model_lock,
+                checkpoint=checkpoint,
             )
         except Exception as e:
             _fail(f"[ERROR] Fail to tokenize using {FR_CDR_file} and {FR_pdb_folder}: {e}", raise_on_error)
@@ -382,7 +392,8 @@ def main(
     input_tokenized_folder = os.path.join(output_path, 'tokenized_input/')
     tokenizer(
         Nb_CDR_file, os.path.dirname(Nb_pdb_path), input_tokenized_folder,
-        connector_len=2, model=model, model_lock=model_lock
+        connector_len=2, model=model, model_lock=model_lock,
+        checkpoint=checkpoint,
     )
 
     # Calculate connector distance
@@ -436,7 +447,8 @@ def main(
             generation_input_file, generation_path, output_path, device, cpu_num,
             ag_pdb_path, structure_sample, len_limit, s_temperature,
             model=model, model_lock=model_lock, output_stream=output_stream,
-            structure_batch_size=structure_batch_size, bf16=bf16
+            structure_batch_size=structure_batch_size, bf16=bf16,
+            checkpoint=checkpoint,
         )
 
         # Collected embeddings and distance for generations
@@ -450,7 +462,8 @@ def main(
             generation_embeddings_path = os.path.join(output_path, 'generation_tokenized_structure')
             tokenizer_grafted(
                 output_table_path, generation_embeddings_path,
-                connector_len=2, model=model, model_lock=model_lock
+                connector_len=2, model=model, model_lock=model_lock,
+                checkpoint=checkpoint,
             )
         except Exception as e:
             import traceback
@@ -486,6 +499,11 @@ def main(
         selected_data = sele_generation(generation_folder, top_n, side_chain_max=side_chain_max)
 
         if not selected_data.empty:
+            try:
+                pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
+                pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
+            except FileNotFoundError as exc:
+                _fail(f"[ERROR] {exc}", raise_on_error)
             generation_path = os.path.join(generation_folder, 'pdb/')
             side_chain(
                 generation_path, selected_data, ag_pdb_path, output_path,
@@ -525,6 +543,16 @@ if __name__ == "__main__":
     parser.add_argument("--distance_limit", type=float, default=10.0, help="Limitation of connector change (recommand: 10-13)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for program (recommand: 42)")
     parser.add_argument("--bf16", action="store_true", help="Cast ESM3 to bfloat16 for faster GPU generation")
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help=(
+            "ESM3 weight file or directory. A file such as esm3_sm_open_v1.pth "
+            "also selects the structure encoder, structure decoder, and function "
+            "decoder weights stored in the same directory. Default: data_root()/data/weights."
+        ),
+    )
     
     # NOTE: follow argument do not activate before 9 July, and previous analysis used 0.7 (might too random). 
     parser.add_argument("--temperature", type=float, default=0.5, help="Temperature used for structure generation (recommand: 0.5-0.7)")
@@ -550,6 +578,9 @@ if __name__ == "__main__":
         action="store_true", 
         help="Duplicate PDB file before generated structure based on four char at head."
     )
+    parser.add_argument("--foldseek-bin", default=None, help="Directory containing foldseek and mmseqs. Overrides FOLDSEEK_BIN.")
+    parser.add_argument("--pippack-bin", default=None, help="Directory containing the PIPPack Python executable. Overrides PIPPACK_BIN.")
+    parser.add_argument("--pippack-home", default=None, help="PIPPack source directory. Overrides PIPPACK_HOME.")
 
     args = parser.parse_args()
 
@@ -587,6 +618,10 @@ if __name__ == "__main__":
         args.distance_limit,
         args.seed,
         structure_batch_size=args.ss_batch,
-        bf16=args.bf16
+        bf16=args.bf16,
+        checkpoint=args.checkpoint,
+        foldseek_bin=args.foldseek_bin,
+        pippack_bin=args.pippack_bin,
+        pippack_home=args.pippack_home,
         )
     print(output)

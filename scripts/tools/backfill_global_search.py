@@ -41,8 +41,6 @@ DEFAULT_SEQS = (
     / "id60"
     / "cluster_rep_seq.fasta"
 )
-DEFAULT_ENV = "/data1/dhuang/miniconda3/envs/foldseek/bin/"
-
 FOLDSEEK_FORMAT = (
     "query,target,fident,alnlen,nident,mismatch,gapopen,"
     "qstart,qend,tstart,tend,evalue,qtmscore,bits,qaln,taln,tseq"
@@ -54,6 +52,8 @@ MMSEQS_FORMAT = (
 
 if str(TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(TOOLS_DIR))
+
+from external_paths import resolve_tool_prefix  # noqa: E402
 
 
 def list_task_dirs(root: Path) -> list[Path]:
@@ -136,7 +136,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Batch grafting output folder")
     parser.add_argument("--pdb-db", default=str(DEFAULT_PDB_DB), help="Foldseek target PDB folder")
     parser.add_argument("--seqs-file", default=str(DEFAULT_SEQS), help="MMseqs target FASTA")
-    parser.add_argument("--env", default=DEFAULT_ENV, help="Directory containing foldseek and mmseqs binaries")
+    parser.add_argument(
+        "--env",
+        default=None,
+        help="Directory containing foldseek and mmseqs. Default: FOLDSEEK_BIN, then PATH.",
+    )
     parser.add_argument("--cpu", type=int, default=8, help="Threads per search")
     parser.add_argument("--evalue", type=float, default=10000.0, help="Relaxed E-value to keep all FRs")
     parser.add_argument("--max-seqs", type=int, default=1000, help="Max hits per query")
@@ -151,7 +155,13 @@ def main() -> int:
     input_dir = Path(args.input).resolve()
     pdb_db = Path(args.pdb_db).resolve()
     seqs_file = Path(args.seqs_file).resolve()
-    env = args.env if args.env.endswith("/") else args.env + "/"
+    env = ""
+    if not (args.skip_foldseek and args.skip_mmseqs):
+        try:
+            env = resolve_tool_prefix(args.env, "FOLDSEEK_BIN", ("foldseek", "mmseqs"))
+        except FileNotFoundError as exc:
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            return 1
 
     if not input_dir.is_dir():
         print(f"[ERROR] Input folder does not exist: {input_dir}", file=sys.stderr)

@@ -18,7 +18,7 @@ Example:
     --pdb-dir data/INDI_database/passed_pdbs \\
     --out-dir data/INDI_database/mmseqs_cluster_structure \\
     --identities 0.95 0.90 0.85 \\
-    --mmseqs /data1/dhuang/MMseqs2-16-747c6/build/bin/mmseqs
+    --mmseqs mmseqs
 """
 
 from __future__ import annotations

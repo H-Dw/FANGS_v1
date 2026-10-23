@@ -108,7 +108,7 @@ def output_connetor(ids_list, full_connector_structures, output_filename):
     df.to_csv(output_filename, sep='\t', index=False)
 
 # def main(table_path, pdb_path, output_path, connector_len):
-def main(table_path, output_path, connector_len, model=None, model_lock=None):
+def main(table_path, output_path, connector_len, model=None, model_lock=None, checkpoint=None):
     os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Disable Hugging Face tokenizer parallelism.
     print(f"table_path: {table_path}\noutput_path: {output_path}\nconnector_len:{connector_len}\n")
 
@@ -131,7 +131,10 @@ def main(table_path, output_path, connector_len, model=None, model_lock=None):
     q_embeddings_file = os.path.join(output_path, 'q_embeddings.tsv')
     tokens_file = os.path.join(output_path, 'structure_tokens.tsv')
 
-    model = ESM3.from_pretrained("esm3_sm_open_v1", device=torch.device("cpu")) if model is None else model
+    model = (
+        ESM3.from_pretrained("esm3_sm_open_v1", device=torch.device("cpu"), checkpoint=checkpoint)
+        if model is None else model
+    )
 
     with open(table_path, mode='r', encoding='utf-8') as file:
         reader = list(csv.DictReader(file, delimiter='\t'))  # Load the complete TSV table into memory.

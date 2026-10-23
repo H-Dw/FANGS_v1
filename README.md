@@ -11,16 +11,12 @@ FANGS is a structure-guided workflow for nanobody framework selection and comple
 
 | Directory | Contents |
 |---|---|
-| `data/` | Archived annotations, native structures, connector representations, generated samples, experimental measurements, and experiment-specific analysis outputs. |
+| `data/` | Archived experiment datasets. Each protocol names the subdirectory it uses. |
 | `scripts/` | Workflow entry points grouped under `preprocess/`, `conditional_generation/`, `batch_generation/`, `grafting_generation/`, `humanization/`, and `connector_screening/`; shared utilities are in `tools/`. |
 | `docs/` | Six experiment protocols specifying data sources, execution commands, and result locations. |
-| `example/` | Donor structures, sequences, and CDR annotation tables for the LaG16, VHH2, and B03 workflows. |
+| `example/` | Donor and carrier inputs for the LaG16, VHH2, and B03 workflows. The quick-start grafting outputs are written to `example/outputs/`. |
 | `esm/` | Project-local ESM3 implementation containing the custom structure-encoding methods. |
-| `results/` | Standalone score tables and outputs from independent reruns, including the quick-start example. |
-| `figures/` | Archived figure exports; additional exports are stored in the experiment-specific analysis directories. |
-| `analysis/` | Revision-stage analysis code and provenance records, including the resolved-structure framework-alignment workflow. |
-
-The principal dataset directories are `data/INDI_database/`, `data/ESM3-Template_validation/`, `data/batch_graft_generation_id70_table/`, `data/6lr7B_grafting_connector_all_temp07_s50_250904/`, `data/samples_evaluation/`, `data/selected_candidates_lag16/`, `data/BLI/`, `data/humanization/`, and `data/connector_screening/`. The protocols identify the relevant inputs and outputs within each directory.
+| `checkpoints/` | Local ESM3 weight files. |
 
 ## 3. Runtime requirements
 
@@ -34,19 +30,46 @@ conda activate fangs
 export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
-The module search path selects the repository-local `esm/` implementation, which provides the custom connector-encoding and generation methods. ESM3 inference uses the `esm3_sm_open_v1` checkpoint together with its structure encoder, structure decoder, and associated model data. Make the complete model data available through `esm/data/` or the Hugging Face cache used by the project loader.
+The module search path selects the repository-local `esm/` implementation, which provides the custom connector-encoding and generation methods. ESM3 code is at [evolutionaryscale/esm](https://github.com/evolutionaryscale/esm). Download `esm3_sm_open_v1` from [EvolutionaryScale/esm3-sm-open-v1](https://huggingface.co/EvolutionaryScale/esm3-sm-open-v1) and place these weights in `checkpoints/` before running inference:
+
+- `checkpoints/esm3_sm_open_v1.pth`
+- `checkpoints/esm3_structure_encoder_v0.pth`
+- `checkpoints/esm3_structure_decoder_v0.pth`
+- `checkpoints/esm3_function_decoder_v0.pth`
+
+Pass `--checkpoint ./checkpoints/esm3_sm_open_v1.pth` to load the main weights from that file. The structure encoder, structure decoder, and function decoder weights are read from the same directory. Tokenizer data is loaded from `esm/data/` or the Hugging Face cache used by the project loader.
 
 | Step | Environment | Principal requirements |
 |---|---|---|
 | Connector encoding, ESM3 template reconstruction, and graft generation | `fangs` | Project-local ESM3, complete ESM3 model data, PyTorch 2.2.0, and CUDA 11.8; PIPPack for side-chain completion. |
 | Human-framework sequence preparation | `fangs` | Biopython, ANARCI, and HMMER 3.3.2 with Kabat numbering support. |
 | Archived-table summaries, statistics, sequence comparison, and paired structural analysis | `fangs` | NumPy, pandas, SciPy, Matplotlib, Biopython, Gemmi, and MAFFT 7.525. |
-| AF3 template reconstruction | `alphafold3` | AlphaFold 3, model parameters, and CUDA; the archived runner distributes inference across four GPUs. Activate through `scripts/conditional_generation/activate_af3.sh`. |
+| AF3 template reconstruction | `alphafold3` | [AlphaFold 3](https://github.com/google-deepmind/alphafold3) |
 | Humanized carrier structure prediction | `boltz` | Boltz-2, model parameters, PyTorch, and CUDA. |
 | AbNatiV sequence scoring | `abnativ` | AbNatiV and its VH and VHH model parameters. The comparison protocol reads the archived AbNatiV scores and HuDiff sequences. |
-| LaG16 global confidence prediction | `protenix` | Protenix, the `protenix_base_default_v1.0.0` model, CUDA, and the archived prediction-ready MSAs. |
+| LaG16 global confidence prediction | `protenix` | [Protenix](https://github.com/bytedance/Protenix) |
 
-ANARCI, HMMER, and MAFFT are installed with `environment.fangs.yml`. Additional external tools are **axel** for CIF retrieval, **USalign** for structural comparison, **MMseqs2** for sequence clustering and search, and **Foldseek** for global structure search. Make these executables available on `PATH` or supply their locations through the protocol arguments. MSA regeneration for Protenix additionally uses ColabFold, MMseqs2, and the UniRef30 and ColabFold environmental databases. Model parameters and database locations are configured in the corresponding runtime scripts and arguments.
+ANARCI, HMMER, and MAFFT are installed with `environment.fangs.yml`. Additional external tools are **axel** for CIF retrieval, **USalign** for structural comparison, **MMseqs2** for sequence clustering and search, and **Foldseek** for global structure search. Make these executables available on `PATH` or supply their locations through the protocol arguments.
+
+Foldseek, PIPPack, AlphaFold 3, and Boltz live outside the `fangs` environment. Point the variables below at the corresponding directories on the machine that runs those steps. Grafting scripts also accept `--foldseek-bin`, `--pippack-bin`, and `--pippack-home`. `scripts/tools/backfill_global_search.py` accepts `--env` for the Foldseek/MMseqs directory. `FOLDSEEK_BIN` can be omitted when `foldseek` and `mmseqs` are already on `PATH`. `BOLTZ_CACHE` can be omitted; `scripts/humanization/run_boltz.sh` then leaves the cache location to Boltz. `PIPPACK_HOME` and `AF3_HOME` have no command-name fallback.
+
+| Variable | Used for |
+|---|---|
+| `FOLDSEEK_BIN` | Directory containing the `foldseek` and `mmseqs` executables |
+| `PIPPACK_BIN` | Directory containing the PIPPack `python` executable |
+| `PIPPACK_HOME` | PIPPack source directory |
+| `AF3_HOME` | Directory that contains the `alphafold3` checkout. `AF3_ROOT` may name that checkout directly. `AF3_CONDA_ENV` selects the environment name (default `alphafold3`). |
+| `BOLTZ_CACHE` | Optional Boltz parameter cache passed to `scripts/humanization/run_boltz.sh` |
+
+The following exports are an example from one workstation:
+
+```bash
+export FOLDSEEK_BIN=/data1/dhuang/miniconda3/envs/foldseek/bin
+export PIPPACK_BIN=/data1/dhuang/miniconda3/envs/pippack/bin
+export PIPPACK_HOME=/data1/dhuang/PIPPack
+export AF3_HOME=/data1/dhuang/af3
+export BOLTZ_CACHE=/s0/dhuang/boltz/cache
+```
 
 Validate the scientific libraries, structural file processing, ANARCI, MAFFT, CUDA execution, and a single ESM3 encoding–generation–decoding cycle with:
 
@@ -58,18 +81,31 @@ python scripts/tools/check_fangs_environment.py \
 
 ## 4. Quick start
 
-Use the archived B03 connector-score tables to retain the lowest original-score decile and rank those candidates by ascending grafting score. This example requires Python and pandas and runs on the CPU.
+Graft the LaG16 CDRs from `example/6lr7B.pdb` onto the five carrier structures in `example/carrier_structures/`. Run the commands from the repository root in the `fangs` environment, after placing the ESM3 weights in `checkpoints/` as described above. Export `PIPPACK_BIN` and `PIPPACK_HOME` before the command so side-chain packing can find PIPPack. This connector-mode example does not run Foldseek. The carrier annotations are `example/carrier_structures/INDI_cdr_info.tsv`. `--ss 5` draws five structure samples for each carrier at temperature 0.7.
 
 ```bash
 conda activate fangs
-python scripts/tools/filter_top_embeddings.py \
-  --input data/connector_screening/8v13HL_CDR3_s50/filter_best_selected_scores \
-  --output results/quick_start/B03_top10pct_candidates.tsv \
-  --orig_col selected_euclidean_average \
-  --graf_col selected_euclidean_average
+export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
+
+python scripts/grafting_generation/graft_CDR_connector.py \
+  -qp example/6lr7B.pdb \
+  -qc example/6lr7B_CDR.tsv \
+  -tp example/carrier_structures \
+  -tc example/carrier_structures/INDI_cdr_info.tsv \
+  -o example/outputs \
+  --ss 5 \
+  --len_limit 180 \
+  --gpu 0 \
+  --mode connector \
+  --type 1 \
+  --top_n 0 \
+  --temperature 0.7 \
+  --distance_limit 10 \
+  --seed 42 \
+  --checkpoint ./checkpoints/esm3_sm_open_v1.pth
 ```
 
-The output is `results/quick_start/B03_top10pct_candidates.tsv`, containing four candidates from the 40 archived window pairs. The first-ranked candidate is `8v13HL_3eakA_CDR1-SYST_CDR2-SMGG`, with original and grafting connector scores of 40.34 and 36.12, respectively. The full workflow is documented in the B03 protocol.
+The run writes 25 designs, five for each of `1zmyA`, `3k1kC`, `4dkaB`, `7nowA`, and `8taoC`. Sample records and coordinates are in `example/outputs/temp_generation/all_info/`. Connector distances are in `example/outputs/extract_distance/`. Side-chain models for the ten retained designs are in `example/outputs/side_chain_generation/`. The library-wide LaG16 workflow is documented in [LaG16 grafting, ranking, and experimental validation](docs/LaG16_grafting_ranking_and_experimental_validation.md).
 
 ## 5. Experiment protocols
 
@@ -79,13 +115,3 @@ The output is `results/quick_start/B03_top10pct_candidates.tsv`, containing four
 4. [LaG16 grafting, ranking, and experimental validation](docs/LaG16_grafting_ranking_and_experimental_validation.md): library-wide grafting, carrier sequence comparison, expression yield and GFP affinity, sampling depth, and Protenix confidence.
 5. [VHH2 humanization and AbNatiV–HuDiff comparison](docs/Humanization_VHH2_library_ranking_and_AbNatiV_HuDiff_comparison.md): human-framework preparation, structural ranking, and the 15-candidate humanization comparison.
 6. [B03 dual-motif window grafting](docs/B03_dual_motif_window_grafting.md): paired-window enumeration, graft generation, and original-score top-decile selection followed by grafting-score ranking.
-
-## 6. Data and result conventions
-
-**Archived data.** The datasets and completed runs under `data/` define the recorded input cohorts and manuscript results. Compressed `*.tar.gz` files contain archived dataset bundles; commands use their extracted directories. Cohort membership is specified by the experiment's ID tables, configuration bundles, or selection manifests.
-
-**Recomputed outputs.** The protocols specify experiment-specific result directories, frequently under a dataset's `analysis/` subtree. For an independent rerun, assign a new named or dated output directory under `results/` or the relevant `analysis/` directory, and set the corresponding `OUT`, `--output-dir`, or `-o` argument before execution. Within generation runs, `temp_generation/all_info/` contains sample records and coordinates; `extract_distance/full/`, `filter/`, and `filter_best/` contain all scored samples, threshold-retained samples, and retained representative samples, respectively. The protocols define the score columns and selection rules for each experiment.
-
-**Identifier mapping.** Native chains use `PDBChain` identifiers such as `6lr7B`; representation tables use `ID`, and connector-score tables use `PDB_ID`. Generation records additionally identify individual samples by filename. Preserve chain case, donor prefixes, allele labels, and window suffixes when joining tables. Deduplicated annotation tables retain source membership in `Member`. For the selected LaG16 construct, the experimental label `4dkaB` corresponds to `4dkaA` in the selected-sequence and Protenix archives; apply this alias to that construct. The protocols record further experiment-specific mappings. When relocating data, update paths embedded in JSON configurations, selection TSVs, and runtime scripts.
-
-**Historical figure labels.** Archived basenames retain panel identifiers assigned during manuscript development. Interpret them using the current manuscript panel assignments documented in the protocols. For example, `Fig1d_resolved_CDR_variation_spearman` corresponds to current Fig. 1f, and `Fig3d_abnativ_vh_vhh` corresponds to current Fig. 3b. The current id70 exports use Fig. 1g–i. Preserve archived filenames when updating manuscript captions and cross-references.

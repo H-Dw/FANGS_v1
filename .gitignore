@@ -1,19 +1,22 @@
-figures/
-
+# Experiment data, figures, and local analysis outputs
 data/
-data/batch_graft_generation/
-data/INDI_database/
-data/samples_evaluation/
-data/5m2jD_grafting_74A_94R_temp07_s50_250917/
-data/6lr7B_grafting_connector_all_temp07_s50_250904/
-data/connector_screening/
-
-esm/data/weights/
-
+figures/
+analysis/
+results/
 optimized_scripts_20260828
-analysis
-results
-*.log
 
-__pycache__
-esm/*
+# Model weights and Zenodo archives. The deposit README stays tracked.
+checkpoints/
+zenodo_deposit/*
+!zenodo_deposit/README.md
+
+# Generated quick-start outputs
+example/outputs/
+
+# Local ESM3 weight files and bytecode
+esm/data/weights/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+*.log

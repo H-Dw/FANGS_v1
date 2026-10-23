@@ -16,7 +16,7 @@ import pandas as pd
 
 SELECTED = {
     "6lr7B_7nowA": "6lr7B_7nowA",
-    "6lr7B_4dkaA": "6lr7B_4dkaB",
+    "6lr7B_4dkaB": "6lr7B_4dkaB",
     "6lr7B_8taoC": "6lr7B_8taoC",
     "6lr7B_3k1kC": "6lr7B_3k1kC",
     "6lr7B_1zmyA": "6lr7B_1zmyA",
