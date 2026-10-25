@@ -11,7 +11,7 @@ FANGS is a structure-guided workflow for nanobody framework selection and comple
 
 | Directory | Contents |
 |---|---|
-| `data/` | Archived experiment datasets. Each protocol names the subdirectory it uses. |
+| `data/` | Archived experiment datasets. Each protocol names the subdirectory it uses. Curated experiment data are deposited on Zenodo `https://doi.org/10.5281/zenodo.23535874`|
 | `scripts/` | Workflow entry points grouped under `preprocess/`, `conditional_generation/`, `batch_generation/`, `grafting_generation/`, `humanization/`, and `connector_screening/`; shared utilities are in `tools/`. |
 | `docs/` | Six experiment protocols specifying data sources, execution commands, and result locations. |
 | `example/` | Donor and carrier inputs for the LaG16, VHH2, and B03 workflows. The quick-start grafting outputs are written to `example/outputs/`. |
