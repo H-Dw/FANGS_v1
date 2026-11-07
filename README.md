@@ -41,7 +41,7 @@ Pass `--checkpoint ./checkpoints/esm3_sm_open_v1.pth` to load the main weights f
 
 | Step | Environment | Principal requirements |
 |---|---|---|
-| Connector encoding, ESM3 template reconstruction, and graft generation | `fangs` | Project-local ESM3, complete ESM3 model data, PyTorch 2.2.0, and CUDA 11.8; PIPPack for side-chain completion. |
+| Connector encoding, ESM3 template reconstruction, and graft generation | `fangs` | Project-local ESM3, complete ESM3 model data, PyTorch 2.2.0, and CUDA 11.8. PIPPack side-chain packing is optional and runs only with `--side_chain`. |
 | Human-framework sequence preparation | `fangs` | Biopython, ANARCI, and HMMER 3.3.2 with Kabat numbering support. |
 | Archived-table summaries, statistics, sequence comparison, and paired structural analysis | `fangs` | NumPy, pandas, SciPy, Matplotlib, Biopython, Gemmi, and MAFFT 7.525. |
 | AF3 template reconstruction | `alphafold3` | [AlphaFold 3](https://github.com/google-deepmind/alphafold3) |
@@ -81,7 +81,7 @@ python scripts/tools/check_fangs_environment.py \
 
 ## 4. Quick start
 
-Graft the LaG16 CDRs from `example/6lr7B.pdb` onto the five carrier structures in `example/carrier_structures/`. Run the commands from the repository root in the `fangs` environment, after placing the ESM3 weights in `checkpoints/` as described above. Export `PIPPACK_BIN` and `PIPPACK_HOME` before the command so side-chain packing can find PIPPack. This connector-mode example does not run Foldseek. The carrier annotations are `example/carrier_structures/INDI_cdr_info.tsv`. `--ss 5` draws five structure samples for each carrier at temperature 0.7.
+Graft the LaG16 CDRs from `example/6lr7B.pdb` onto the five carrier structures in `example/carrier_structures/`. Run the commands from the repository root in the `fangs` environment, after placing the ESM3 weights in `checkpoints/` as described above. Side-chain packing is off by default, so this command does not require PIPPack. This connector-mode example does not run Foldseek. The carrier annotations are `example/carrier_structures/INDI_cdr_info.tsv`. `--ss 5` draws five structure samples for each carrier at temperature 0.7. We recommend using `--ss 50`. Too few samples limit the model's chance of sampling the optimal conformation.
 
 ```bash
 conda activate fangs
@@ -105,7 +105,7 @@ python scripts/grafting_generation/graft_CDR_connector.py \
   --checkpoint ./checkpoints/esm3_sm_open_v1.pth
 ```
 
-The run writes 25 designs, five for each of `1zmyA`, `3k1kC`, `4dkaB`, `7nowA`, and `8taoC`. Sample records and coordinates are in `example/outputs/temp_generation/all_info/`. Connector distances are in `example/outputs/extract_distance/`. Side-chain models for the ten retained designs are in `example/outputs/side_chain_generation/`. The library-wide LaG16 workflow is documented in [LaG16 grafting, ranking, and experimental validation](docs/LaG16_grafting_ranking_and_experimental_validation.md).
+The run writes 25 designs, five for each of `1zmyA`, `3k1kC`, `4dkaB`, `7nowA`, and `8taoC`. Sample records and coordinates are in `example/outputs/temp_generation/all_info/`. Connector distances are in `example/outputs/extract_distance/`. Side-chain models are written to `example/outputs/side_chain_generation/` only when `--side_chain` is set. The library-wide LaG16 workflow is documented in [LaG16 grafting, ranking, and experimental validation](docs/LaG16_grafting_ranking_and_experimental_validation.md).
 
 ## 5. Experiment protocols
 

@@ -13,10 +13,11 @@ zenodo_deposit/*
 # Generated quick-start outputs
 example/outputs/
 
-# Local ESM3 weight files and bytecode
+# Local ESM3 weight files, bytecode, and local tests
 esm/data/weights/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+tests/
 
 *.log

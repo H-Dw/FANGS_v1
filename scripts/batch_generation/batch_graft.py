@@ -76,6 +76,7 @@ class BatchConfig:
     seed: Optional[int]
     dupl_pdb: bool
     side_chain_max: int
+    run_side_chain: bool
     bf16: bool
 
 
@@ -226,6 +227,7 @@ def process_pdb_task(
                 tmp_subdir=os.path.join(pdb_folder, 'similarity', 'search_tmp'),
                 raise_on_error=True,
                 side_chain_max=config.side_chain_max,
+                run_side_chain=config.run_side_chain,
                 structure_batch_size=config.structure_batch_size,
                 bf16=config.bf16,
             )
@@ -360,6 +362,7 @@ def run_batch(
     seed: Optional[int],
     dupl_pdb: bool,
     side_chain_max: int,
+    run_side_chain: bool,
     bf16: bool,
 ) -> None:
     os.makedirs(output_path, exist_ok=True)
@@ -429,6 +432,7 @@ def run_batch(
         seed=seed,
         dupl_pdb=dupl_pdb,
         side_chain_max=side_chain_max,
+        run_side_chain=run_side_chain,
         bf16=bf16,
     )
 
@@ -500,7 +504,12 @@ def main() -> None:
     parser.add_argument('--distance_limit', type=float, default=10.0, help='Connector distance filter threshold')
     parser.add_argument('--seed', type=int, default=None, help='Random seed')
     parser.add_argument('--dupl_pdb', action='store_true', help='Duplicate PDB rows before generation')
-    parser.add_argument('--side_chain_max', type=int, default=10, help='Maximum side-chain structures per target')
+    parser.add_argument('--side_chain_max', type=int, default=10, help='Maximum side-chain structures per target when --side_chain is set')
+    parser.add_argument(
+        '--side_chain',
+        action='store_true',
+        help='Pack side chains with PIPPack. Off by default.',
+    )
     parser.add_argument('--bf16', action='store_true', help='Cast ESM3 to bfloat16 for faster GPU generation')
 
     args = parser.parse_args()
@@ -527,6 +536,7 @@ def main() -> None:
         seed=args.seed,
         dupl_pdb=args.dupl_pdb,
         side_chain_max=args.side_chain_max,
+        run_side_chain=args.side_chain,
         bf16=args.bf16,
     )
 

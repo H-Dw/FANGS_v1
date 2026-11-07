@@ -300,7 +300,7 @@ def main(
     global_search=True, alignment=False, dupl_pdb=True, s_temperature=0.7,
     distance_limit=10.0, seed=None,
     model=None, model_lock=None, gpu_managed=False, output_stream=None,
-    tmp_subdir=None, raise_on_error=False, side_chain_max=SIDE_CHAIN_MAX_DEFAULT, structure_batch_size=1, bf16=False, checkpoint=None,
+    tmp_subdir=None, raise_on_error=False, run_side_chain=False, side_chain_max=SIDE_CHAIN_MAX_DEFAULT, structure_batch_size=1, bf16=False, checkpoint=None,
     foldseek_bin=None, pippack_bin=None, pippack_home=None):
     # Record the pipeline start time for subsequent runtime reporting.
     start_time = time.time()
@@ -493,22 +493,25 @@ def main(
         except Exception as e:
             print(f"[ERROR] Fail to process extract_distance for generations: {e}")
 
-        # Generate side chain
-        # Selected the generations which were sorted by cRMSD
-        generation_folder = os.path.join(generation_path, 'all_info/')
-        selected_data = sele_generation(generation_folder, top_n, side_chain_max=side_chain_max)
+        # Side-chain packing is off unless explicitly requested. The default path
+        # does not look up PIPPack or side_chain_generation.py.
+        if run_side_chain:
+            generation_folder = os.path.join(generation_path, 'all_info/')
+            selected_data = sele_generation(generation_folder, top_n, side_chain_max=side_chain_max)
 
-        if not selected_data.empty:
-            try:
-                pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
-                pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
-            except FileNotFoundError as exc:
-                _fail(f"[ERROR] {exc}", raise_on_error)
-            generation_path = os.path.join(generation_folder, 'pdb/')
-            side_chain(
-                generation_path, selected_data, ag_pdb_path, output_path,
-                pippack_env, pippack_path, code_path, device
-            )
+            if not selected_data.empty:
+                try:
+                    pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
+                    pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
+                except FileNotFoundError as exc:
+                    _fail(f"[ERROR] {exc}", raise_on_error)
+                packed_pdb_path = os.path.join(generation_folder, 'pdb/')
+                side_chain(
+                    packed_pdb_path, selected_data, ag_pdb_path, output_path,
+                    pippack_env, pippack_path, code_path, device
+                )
+        else:
+            print("Side-chain generation is disabled.")
 
     else:
         print("Generation is disabled.")
@@ -579,6 +582,11 @@ if __name__ == "__main__":
         help="Duplicate PDB file before generated structure based on four char at head."
     )
     parser.add_argument("--foldseek-bin", default=None, help="Directory containing foldseek and mmseqs. Overrides FOLDSEEK_BIN.")
+    parser.add_argument(
+        "--side_chain",
+        action="store_true",
+        help="Pack side chains with PIPPack. Off by default; requires PIPPACK_BIN, PIPPACK_HOME, and side_chain_generation.py.",
+    )
     parser.add_argument("--pippack-bin", default=None, help="Directory containing the PIPPack Python executable. Overrides PIPPACK_BIN.")
     parser.add_argument("--pippack-home", default=None, help="PIPPack source directory. Overrides PIPPACK_HOME.")
 
@@ -623,5 +631,6 @@ if __name__ == "__main__":
         foldseek_bin=args.foldseek_bin,
         pippack_bin=args.pippack_bin,
         pippack_home=args.pippack_home,
+        run_side_chain=args.side_chain,
         )
     print(output)

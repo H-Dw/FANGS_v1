@@ -177,7 +177,7 @@ def convert(cdr_tsv, generation_path, output_path=None):
     # Write output
     out_df.to_csv(output_path, sep='\t', index=False)
 
-def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_pdb_path, structure_sample, gpu, cpu_num, non_generation, select_mode, type, top_n, len_limit, seqs_file=None, tokenized_folder=None, global_search=True, alignment=False, foldseek_bin=None, pippack_bin=None, pippack_home=None):
+def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_pdb_path, structure_sample, gpu, cpu_num, non_generation, select_mode, type, top_n, len_limit, seqs_file=None, tokenized_folder=None, global_search=True, alignment=False, foldseek_bin=None, pippack_bin=None, pippack_home=None, run_side_chain=False):
     start_time = time.time()
 
     print(f'Process: {Nb_pdb_path}. NOTE: The first row in the {Nb_CDR_file} was selected as target.')
@@ -277,20 +277,21 @@ def main(Nb_pdb_path, Nb_CDR_file, FR_pdb_folder, FR_CDR_file, output_path, ag_p
         # Template-based structure generation
         grafting_generation(generation_input_file, generation_path, output_path, device, cpu_num, ag_pdb_path, structure_sample, len_limit)
 
-        # Selected the generations which were sorted by cRMSD
-        passed_generation_folder = os.path.join(generation_path, 'passed_info/')
-        select_n = 10
-        selected_data = sele_generation(passed_generation_folder, select_n)
+        if run_side_chain:
+            passed_generation_folder = os.path.join(generation_path, 'passed_info/')
+            select_n = 10
+            selected_data = sele_generation(passed_generation_folder, select_n)
 
-        try:
-            pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
-            pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
-        except FileNotFoundError as exc:
-            print(f"[ERROR] {exc}")
-            sys.exit(1)
-        # Generated side-chain of each selected generations
-        passed_generation_path = os.path.join(passed_generation_folder, 'pdb/')
-        side_chain(passed_generation_path, selected_data, ag_pdb_path, output_path, pippack_env, pippack_path, code_path, device)
+            try:
+                pippack_env = resolve_tool_prefix(pippack_bin, "PIPPACK_BIN", ("python",))
+                pippack_path = resolve_directory(pippack_home, "PIPPACK_HOME", "PIPPack")
+            except FileNotFoundError as exc:
+                print(f"[ERROR] {exc}")
+                sys.exit(1)
+            passed_generation_path = os.path.join(passed_generation_folder, 'pdb/')
+            side_chain(passed_generation_path, selected_data, ag_pdb_path, output_path, pippack_env, pippack_path, code_path, device)
+        else:
+            print("Side-chain generation is disabled.")
 
         # Collected embeddings and distance for generations
         output_table_path = os.path.join(generation_path, 'temp_output.tsv')
@@ -354,6 +355,11 @@ if __name__ == "__main__":
         help="Using alignment method"
     )
     parser.add_argument("--foldseek-bin", default=None, help="Directory containing foldseek and mmseqs. Overrides FOLDSEEK_BIN.")
+    parser.add_argument(
+        "--side_chain",
+        action="store_true",
+        help="Pack side chains with PIPPack. Off by default; requires PIPPACK_BIN, PIPPACK_HOME, and side_chain_generation.py.",
+    )
     parser.add_argument("--pippack-bin", default=None, help="Directory containing the PIPPack Python executable. Overrides PIPPACK_BIN.")
     parser.add_argument("--pippack-home", default=None, help="PIPPack source directory. Overrides PIPPACK_HOME.")
 
@@ -391,5 +397,6 @@ if __name__ == "__main__":
         args.foldseek_bin,
         args.pippack_bin,
         args.pippack_home,
+        args.side_chain,
         )
     print(output)
